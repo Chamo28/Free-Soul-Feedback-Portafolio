@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getCurationSurvey, submitCurationResponse } from "../api.js";
 import CurationCard from "../components/CurationCard.jsx";
@@ -17,6 +17,10 @@ export default function Curation() {
   const [comentarios, setComentarios] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Ref (no state) para bloquear un doble-tap al instante: en mobile, dos taps
+  // muy rápidos en "Enviar selección" pueden disparar el submit dos veces
+  // antes de que React vuelva a renderizar el botón con disabled=true.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     getCurationSurvey(surveyId)
@@ -55,7 +59,9 @@ export default function Curation() {
 
   const handleFinalSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return; // bloquea doble-tap al instante
     setError("");
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await submitCurationResponse({
@@ -68,6 +74,7 @@ export default function Curation() {
     } catch (err) {
       setError(err.response?.data?.error || "No se pudo enviar tu selección. Intenta de nuevo.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

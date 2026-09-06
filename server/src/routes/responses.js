@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { requireAdmin } from "../middleware/auth.js";
-import { addResponse, getResponses, getProductById, getProducts } from "../jsonStore.js";
+import { addResponse, getResponses, getProductById, getProducts, markResponseSynced } from "../jsonStore.js";
 import { appendRow, rowFromResponse } from "../services/sheets.js";
 import { summarizeResponses } from "../services/scoring.js";
 
@@ -27,6 +27,25 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "Compraría debe ser sí/no." });
   }
 
+  // Red de seguridad contra envíos duplicados (doble-tap en mobile, reintento
+  // de red, etc.): si llega una respuesta idéntica para este producto en los
+  // últimos 15s, se responde igual sin crear otra fila.
+  const DUPLICATE_WINDOW_MS = 15000;
+  const now = Date.now();
+  const possibleDuplicate = getResponses().find(
+    (r) =>
+      r.productId === productId &&
+      now - new Date(r.fecha).getTime() < DUPLICATE_WINDOW_MS &&
+      r.atractivo === a &&
+      r.calidad === c &&
+      r.precio === p &&
+      r.compraria === compraria &&
+      (r.comentarios || "") === ((comentarios && String(comentarios).trim()) || "")
+  );
+  if (possibleDuplicate) {
+    return res.status(201).json({ ok: true, synced: possibleDuplicate.synced, duplicate: true });
+  }
+
   const response = {
     id: crypto.randomUUID(),
     productId,
@@ -47,10 +66,7 @@ router.post("/", async (req, res) => {
   const result = await appendRow(rowFromResponse(response, product));
   if (result.ok) {
     response.synced = true;
-    // actualizar en el store
-    const all = getResponses();
-    const stored = all.find((r) => r.id === response.id);
-    if (stored) stored.synced = true;
+    markResponseSynced(response.id, true); // persiste a disco (antes solo se mutaba en memoria y se perdía)
   }
 
   res.status(201).json({ ok: true, synced: response.synced });

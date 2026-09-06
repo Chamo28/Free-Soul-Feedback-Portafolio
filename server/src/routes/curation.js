@@ -163,6 +163,21 @@ router.post("/responses", async (req, res) => {
   // selectedProductIds[0] = su favorito absoluto (#1), el último = el que menos le gustó.
   const favoriteId = selectedProductIds[0];
 
+  // Red de seguridad contra envíos duplicados (doble-tap en mobile, reintento
+  // de red, etc.): si la misma selección exacta para esta encuesta llegó hace
+  // menos de 15s, se trata como el mismo envío en vez de crear otra fila.
+  const DUPLICATE_WINDOW_MS = 15000;
+  const now = Date.now();
+  const possibleDuplicate = getCurationResponses().find(
+    (r) =>
+      r.surveyId === surveyId &&
+      now - new Date(r.fecha).getTime() < DUPLICATE_WINDOW_MS &&
+      JSON.stringify(r.selectedProductIds) === JSON.stringify(selectedProductIds)
+  );
+  if (possibleDuplicate) {
+    return res.status(201).json({ ok: true, synced: possibleDuplicate.synced, duplicate: true });
+  }
+
   const response = {
     id: crypto.randomUUID(),
     surveyId,
@@ -179,9 +194,7 @@ router.post("/responses", async (req, res) => {
   const result = await appendCurationResponseRow(rowFromCurationResponse(response, survey));
   if (result.ok) {
     response.synced = true;
-    const all = getCurationResponses();
-    const stored = all.find((r) => r.id === response.id);
-    if (stored) stored.synced = true;
+    markCurationResponseSynced(response.id, true); // persiste a disco (antes solo se mutaba en memoria y se perdía)
   }
 
   // Actualizamos también la hoja de ranking agregado (best-effort; si Sheets

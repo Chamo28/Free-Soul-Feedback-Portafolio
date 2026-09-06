@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getProduct, submitResponse } from "../api.js";
 import PhotoCarousel from "../components/PhotoCarousel.jsx";
@@ -17,6 +17,10 @@ export default function Survey() {
   const [comentarios, setComentarios] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Ref (no state) para bloquear un doble-tap al instante: en mobile, dos taps
+  // muy rápidos pueden disparar el submit dos veces antes de que React
+  // vuelva a renderizar el botón con disabled=true.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     getProduct(productId)
@@ -26,11 +30,13 @@ export default function Survey() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return; // bloquea doble-tap al instante
     setError("");
     if (!atractivo || !calidad || !precio || compraria === null) {
       setError("Por favor responde todas las preguntas antes de enviar.");
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await submitResponse({
@@ -46,6 +52,7 @@ export default function Survey() {
     } catch (err) {
       setError(err.response?.data?.error || "No se pudo enviar tu respuesta. Intenta de nuevo.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
