@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getProduct, submitResponse } from "../api.js";
 import PhotoCarousel from "../components/PhotoCarousel.jsx";
 import ScoreInput from "../components/ScoreInput.jsx";
+import EvaluatorHeader from "../components/EvaluatorHeader.jsx";
 
 export default function Survey() {
   const { productId } = useParams();
@@ -59,24 +60,30 @@ export default function Survey() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4 text-center">
-        <p className="text-slate-500">Esta encuesta ya no está disponible.</p>
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Feedback de Producto" />
+        <div className="flex items-center justify-center px-4 pt-16 text-center">
+          <p className="text-slate-500">Esta encuesta ya no está disponible.</p>
+        </div>
       </div>
     );
   }
 
   if (!product) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Cargando...</p>
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Feedback de Producto" />
+        <div className="flex items-center justify-center pt-16">
+          <p className="text-slate-400">Cargando...</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
+      <EvaluatorHeader subtitle="Feedback de Producto" />
       <div className="max-w-md mx-auto px-4 pt-6">
-        <img src="/icon-512.png" alt="Free Soul DNA" className="h-10 w-10 rounded-xl mb-3" />
         <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold mb-1">{product.category}</p>
         <h1 className="text-xl font-display font-bold text-slate-800 mb-4">{product.name}</h1>
 

@@ -4,6 +4,7 @@ import { getCurationSurvey, submitCurationResponse } from "../api.js";
 import CurationCard from "../components/CurationCard.jsx";
 import ZoomModal from "../components/ZoomModal.jsx";
 import RankedList from "../components/RankedList.jsx";
+import EvaluatorHeader from "../components/EvaluatorHeader.jsx";
 
 export default function Curation() {
   const { surveyId } = useParams();
@@ -81,25 +82,32 @@ export default function Curation() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4 text-center">
-        <p className="text-slate-500">Esta curaduría ya no está disponible.</p>
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
+        <div className="flex items-center justify-center px-4 pt-16 text-center">
+          <p className="text-slate-500">Esta curaduría ya no está disponible.</p>
+        </div>
       </div>
     );
   }
 
   if (!survey) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Cargando...</p>
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
+        <div className="flex items-center justify-center pt-16">
+          <p className="text-slate-400">Cargando...</p>
+        </div>
       </div>
     );
   }
 
   if (step === "intro") {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-10">
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
+        <div className="flex items-center justify-center px-4 py-10">
         <div className="max-w-md w-full">
-          <img src="/icon-512.png" alt="Free Soul DNA" className="h-10 w-10 rounded-xl mb-3" />
           <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold mb-1">{survey.category}</p>
           <h1 className="text-xl font-display font-bold text-slate-800 mb-3">{survey.name}</h1>
 
@@ -138,6 +146,7 @@ export default function Curation() {
             </button>
           </form>
         </div>
+        </div>
       </div>
     );
   }
@@ -145,9 +154,10 @@ export default function Curation() {
   if (step === "confirm") {
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
         <div className="max-w-md mx-auto px-4 pt-6">
           <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold mb-1">{survey.category}</p>
-          <h1 className="text-xl font-bold text-slate-800 mb-1">{survey.name}</h1>
+          <h1 className="text-xl font-display font-bold text-slate-800 mb-1">{survey.name}</h1>
           <p className="text-slate-500 mb-1">
             Este es tu orden de preferencia: #1 es tu favorito absoluto, #{count} el que menos te convenció de tu
             selección.
@@ -196,7 +206,9 @@ export default function Curation() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
-      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
+      <div className="sticky top-0 z-20 shadow-sm">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
+        <div className="bg-white border-b border-slate-200">
         <div className="max-w-3xl mx-auto px-4 py-3">
           <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold">{survey.category}</p>
           <div className="flex items-center justify-between gap-3">
@@ -213,6 +225,7 @@ export default function Curation() {
             {mode === "exact" ? `Elige exactamente ${count} productos, ` : `Elige hasta ${count} productos, `}
             en orden: el primer clic es tu #1 favorito.
           </p>
+        </div>
         </div>
       </div>
 
