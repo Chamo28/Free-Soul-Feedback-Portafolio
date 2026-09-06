@@ -63,6 +63,29 @@ const CURATION_RANKING_HEADER = [
 let sheetsClient = null;
 let initError = null;
 const headerEnsuredTabs = new Set();
+const tabsKnownToExist = new Set();
+
+// La API de Sheets no crea una pestaña sola con values.append/update — hay que
+// pedirlo explícitamente con batchUpdate. Sin esto, si el usuario no crea las
+// pestañas a mano, cada escritura falla en silencio (queda "pendiente" para
+// siempre). Se cachea por spreadsheetId+tab para no consultar en cada request.
+async function ensureTabExists(client, tab) {
+  if (tabsKnownToExist.has(tab)) return;
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  const existingTitles = (meta.data.sheets || []).map((s) => s.properties.title);
+  if (existingTitles.includes(tab)) {
+    tabsKnownToExist.add(tab);
+    return;
+  }
+  await client.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+  });
+  tabsKnownToExist.add(tab);
+}
 
 function isConfigured() {
   if (!SHEET_ID) return false;
@@ -169,6 +192,7 @@ export async function writeCurationRankingSheet(surveyId, rows) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError };
   try {
+    await ensureTabExists(client, CURATION_RANKING_TAB);
     await ensureHeaderFor(client, CURATION_RANKING_TAB, CURATION_RANKING_HEADER);
     // Traer todo lo existente para conservar filas de otras encuestas de curaduría.
     const lastCol = String.fromCharCode(64 + CURATION_RANKING_HEADER.length);
@@ -204,6 +228,7 @@ async function appendRowToTab(tab, headerRow, row) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError };
   try {
+    await ensureTabExists(client, tab);
     await ensureHeaderFor(client, tab, headerRow);
     const lastCol = String.fromCharCode(64 + headerRow.length);
     await client.spreadsheets.values.append({

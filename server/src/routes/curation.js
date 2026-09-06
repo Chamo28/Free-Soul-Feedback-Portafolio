@@ -225,16 +225,24 @@ export async function retryUnsyncedCurationResponses() {
   const pending = getUnsyncedCurationResponses();
   let pushed = 0;
   let error = null;
+  const touchedSurveyIds = new Set();
   for (const r of pending) {
     const survey = getCurationSurveyById(r.surveyId);
     const result = await appendCurationResponseRow(rowFromCurationResponse(r, survey));
     if (result.ok) {
       markCurationResponseSynced(r.id, true);
       pushed++;
+      if (survey) touchedSurveyIds.add(survey.id);
     } else {
       error = result.error;
       break;
     }
+  }
+  // El botón "Sincronizar" también debe dejar la pestaña de ranking al día,
+  // no solo el log de respuestas (antes solo se actualizaba en el envío original).
+  for (const surveyId of touchedSurveyIds) {
+    const survey = getCurationSurveyById(surveyId);
+    if (survey) await syncRankingSheet(survey);
   }
   return { pushed, remaining: pending.length - pushed, error };
 }
