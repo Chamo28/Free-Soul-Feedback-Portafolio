@@ -99,8 +99,9 @@ export default function Curation() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-10">
         <div className="max-w-md w-full">
+          <img src="/icon-512.png" alt="Free Soul DNA" className="h-10 w-10 rounded-xl mb-3" />
           <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold mb-1">{survey.category}</p>
-          <h1 className="text-xl font-bold text-slate-800 mb-3">{survey.name}</h1>
+          <h1 className="text-xl font-display font-bold text-slate-800 mb-3">{survey.name}</h1>
 
           {survey.instructions && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-4">

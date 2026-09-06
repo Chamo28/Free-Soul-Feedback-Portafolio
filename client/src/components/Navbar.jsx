@@ -6,14 +6,20 @@ export default function Navbar() {
   const location = useLocation();
 
   const linkClass = (path) =>
-    `px-3 py-2 rounded-lg text-sm font-medium ${
-      location.pathname === path ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"
+    `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+      location.pathname === path ? "bg-brand-100 text-brand-700" : "text-white/80 hover:bg-white/10 hover:text-white"
     }`;
 
   return (
-    <nav className="bg-white border-b border-slate-200 sticky top-0 z-10">
-      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <span className="font-bold text-brand-700">FreeSoul · Feedback</span>
+    <nav className="bg-brand-700 sticky top-0 z-10 shadow-md">
+      <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
+        <Link to="/admin" className="flex items-center gap-2">
+          <img src="/icon-512.png" alt="Free Soul DNA" className="h-9 w-9 rounded-full" />
+          <span className="font-display font-semibold text-white leading-tight hidden sm:block">
+            Free Soul DNA
+            <span className="block text-[11px] font-normal text-brand-100/80 -mt-0.5">Panel de Feedback</span>
+          </span>
+        </Link>
         <div className="flex items-center gap-1">
           <Link className={linkClass("/admin")} to="/admin">
             Productos
@@ -26,7 +32,7 @@ export default function Navbar() {
               adminLogout();
               navigate("/admin/login");
             }}
-            className="ml-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100"
+            className="ml-1 px-3 py-2 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white"
           >
             Salir
           </button>

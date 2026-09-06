@@ -13,6 +13,13 @@ server/uploads/*
 server/credentials/*
 !server/credentials/.gitkeep
 
+# Red de seguridad extra: nunca subir un JSON de Service Account de Google
+# aunque quede suelto fuera de server/credentials/ (nombre típico descargado
+# de Google Cloud: <project>-<hash>.json).
+/*-*.json
+!package.json
+!package-lock.json
+
 *.log
 dev-log.txt
 tunnel-log.txt

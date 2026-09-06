@@ -76,8 +76,9 @@ export default function Survey() {
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
       <div className="max-w-md mx-auto px-4 pt-6">
+        <img src="/icon-512.png" alt="Free Soul DNA" className="h-10 w-10 rounded-xl mb-3" />
         <p className="text-xs uppercase tracking-wide text-brand-600 font-semibold mb-1">{product.category}</p>
-        <h1 className="text-xl font-bold text-slate-800 mb-4">{product.name}</h1>
+        <h1 className="text-xl font-display font-bold text-slate-800 mb-4">{product.name}</h1>
 
         {product.instructions && (
           <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-4">
