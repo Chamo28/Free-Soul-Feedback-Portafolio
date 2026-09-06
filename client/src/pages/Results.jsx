@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
+import ZoomModal from "../components/ZoomModal.jsx";
 import { getRankings, getSyncStatus, triggerSync, getCurationSurveys, getCurationRankings } from "../api.js";
 
 const badgeClass = {
@@ -22,9 +23,11 @@ export default function Results() {
 
   return (
     <div>
-      <Navbar />
+      <div className="print:hidden">
+        <Navbar />
+      </div>
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex gap-2 mb-5">
+        <div className="flex gap-2 mb-5 print:hidden">
           <button
             onClick={() => setTab("detallada")}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${
@@ -64,6 +67,7 @@ function DetailedResults() {
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("Todas");
+  const [zoomItem, setZoomItem] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -94,7 +98,7 @@ function DetailedResults() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-lg font-bold text-slate-800">Rankings y recomendación</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 print:hidden">
           {syncStatus && (
             <span
               className={`text-xs px-2 py-1 rounded-full font-medium ${
@@ -112,11 +116,17 @@ function DetailedResults() {
           >
             {syncing ? "Sincronizando..." : "Sincronizar con Sheets"}
           </button>
+          <button
+            onClick={() => window.print()}
+            className="text-sm bg-brand-600 text-white rounded-lg px-3 py-1.5"
+          >
+            🖨️ Exportar / Imprimir
+          </button>
         </div>
       </div>
 
       {categories.length > 1 && (
-        <div className="flex gap-2 mb-4 overflow-x-auto">
+        <div className="flex gap-2 mb-4 overflow-x-auto print:hidden">
           {categories.map((c) => (
             <button
               key={c}
@@ -147,7 +157,8 @@ function DetailedResults() {
                 <img
                   src={r.product.photos[0]}
                   alt={r.product.name}
-                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                  onClick={() => setZoomItem({ photo: r.product.photos[0], name: r.product.name })}
+                  className="w-24 h-24 print:w-40 print:h-40 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-80"
                 />
               )}
               <div className="flex-1">
@@ -188,6 +199,8 @@ function DetailedResults() {
           </div>
         ))}
       </div>
+
+      <ZoomModal photo={zoomItem?.photo} name={zoomItem?.name} onClose={() => setZoomItem(null)} />
     </div>
   );
 }
@@ -199,6 +212,8 @@ function CurationResults({ initialSurveyId }) {
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [zoomItem, setZoomItem] = useState(null);
+  const selectedSurvey = surveys.find((s) => s.id === selectedId);
 
   useEffect(() => {
     Promise.all([getCurationSurveys(), getSyncStatus()]).then(([list, s]) => {
@@ -240,7 +255,14 @@ function CurationResults({ initialSurveyId }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      {/* Solo visible al imprimir/exportar: el <select> de abajo no imprime su valor. */}
+      {selectedSurvey && (
+        <h1 className="hidden print:block text-lg font-bold text-slate-800 mb-4">
+          {selectedSurvey.name} · {selectedSurvey.category}
+        </h1>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
@@ -270,6 +292,12 @@ function CurationResults({ initialSurveyId }) {
             className="text-sm border border-slate-300 rounded-lg px-3 py-1.5 disabled:opacity-60"
           >
             {syncing ? "Sincronizando..." : "Sincronizar con Sheets"}
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="text-sm bg-brand-600 text-white rounded-lg px-3 py-1.5"
+          >
+            🖨️ Exportar / Imprimir
           </button>
         </div>
       </div>
@@ -310,7 +338,12 @@ function CurationResults({ initialSurveyId }) {
                 className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3"
               >
                 <span className="text-sm font-bold text-slate-400 w-6 text-center">{i + 1}</span>
-                <img src={row.photo} alt={row.name} className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                <img
+                  src={row.photo}
+                  alt={row.name}
+                  onClick={() => setZoomItem({ photo: row.photo, name: row.name })}
+                  className="w-20 h-20 print:w-40 print:h-40 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-80"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-800 truncate">
                     {row.name} {row.vecesFavorito > 0 && <span className="text-amber-500">★{row.vecesFavorito}</span>}
@@ -332,6 +365,8 @@ function CurationResults({ initialSurveyId }) {
           </div>
         </>
       )}
+
+      <ZoomModal photo={zoomItem?.photo} name={zoomItem?.name} onClose={() => setZoomItem(null)} />
     </div>
   );
 }
