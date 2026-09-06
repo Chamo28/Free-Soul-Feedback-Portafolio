@@ -137,7 +137,7 @@ router.delete("/surveys/:id", requireAdmin, (req, res) => {
 // --- Respuestas de curaduría ---
 
 router.post("/responses", async (req, res) => {
-  const { surveyId, evaluador, selectedProductIds, comentarios } = req.body || {};
+  const { surveyId, evaluador, selectedProductIds, comentarios, submissionId } = req.body || {};
 
   const survey = getCurationSurveyById(surveyId);
   if (!survey) return res.status(404).json({ error: "Encuesta de curaduría no encontrada." });
@@ -163,23 +163,25 @@ router.post("/responses", async (req, res) => {
   // selectedProductIds[0] = su favorito absoluto (#1), el último = el que menos le gustó.
   const favoriteId = selectedProductIds[0];
 
-  // Red de seguridad contra envíos duplicados (doble-tap en mobile, reintento
-  // de red, etc.): si la misma selección exacta para esta encuesta llegó hace
-  // menos de 15s, se trata como el mismo envío en vez de crear otra fila.
-  const DUPLICATE_WINDOW_MS = 15000;
-  const now = Date.now();
-  const possibleDuplicate = getCurationResponses().find(
-    (r) =>
-      r.surveyId === surveyId &&
-      now - new Date(r.fecha).getTime() < DUPLICATE_WINDOW_MS &&
-      JSON.stringify(r.selectedProductIds) === JSON.stringify(selectedProductIds)
-  );
-  if (possibleDuplicate) {
-    return res.status(201).json({ ok: true, synced: possibleDuplicate.synced, duplicate: true });
+  // Red de seguridad contra el mismo envío repetido (doble-tap en mobile,
+  // reintento de red): el navegador genera un submissionId aleatorio UNA vez
+  // por visita y lo reenvía igual en cada intento. Si ya existe una respuesta
+  // con ese mismo submissionId, es literalmente el mismo envío — no un
+  // evaluador distinto que coincide por casualidad en la selección (por eso
+  // NO comparamos por nombre/contenido: dos personas anónimas que eligen lo
+  // mismo casi al tiempo deben quedar guardadas igual, cada una la suya).
+  if (submissionId) {
+    const existing = getCurationResponses().find(
+      (r) => r.surveyId === surveyId && r.submissionId === submissionId
+    );
+    if (existing) {
+      return res.status(201).json({ ok: true, synced: existing.synced, duplicate: true });
+    }
   }
 
   const response = {
     id: crypto.randomUUID(),
+    submissionId: submissionId || null,
     surveyId,
     evaluador: (evaluador && String(evaluador).trim()) || "Anónimo",
     fecha: new Date().toISOString(),

@@ -6,7 +6,10 @@ export default function ProductCard({ product, onDeleted }) {
   const [copied, setCopied] = useState(false);
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [instructions, setInstructions] = useState(product.instructions || "");
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(product.name);
   const [saving, setSaving] = useState(false);
+  const [savingName, setSavingName] = useState(false);
   const surveyPath = `/survey/${product.id}`;
 
   const copyLink = async () => {
@@ -37,6 +40,20 @@ export default function ProductCard({ product, onDeleted }) {
     }
   };
 
+  const saveName = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSavingName(true);
+    try {
+      await updateProduct(product.id, { name: trimmed });
+      product.name = trimmed;
+      setName(trimmed);
+      setEditingName(false);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
       <div className="aspect-square bg-slate-100">
@@ -46,7 +63,44 @@ export default function ProductCard({ product, onDeleted }) {
       </div>
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div>
-          <p className="font-semibold text-slate-800 leading-tight">{product.name}</p>
+          {editingName ? (
+            <div className="flex gap-1.5 mb-0.5">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveName();
+                  if (e.key === "Escape") {
+                    setName(product.name);
+                    setEditingName(false);
+                  }
+                }}
+                className="flex-1 text-sm font-semibold border border-brand-300 rounded px-2 py-1"
+                autoFocus
+              />
+              <button
+                onClick={saveName}
+                disabled={savingName}
+                className="text-xs bg-brand-600 text-white px-2 rounded disabled:opacity-60"
+              >
+                ✓
+              </button>
+              <button
+                onClick={() => {
+                  setName(product.name);
+                  setEditingName(false);
+                }}
+                className="text-xs border border-slate-300 px-2 rounded"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setEditingName(true)} className="group flex items-center gap-1.5 text-left">
+              <p className="font-semibold text-slate-800 leading-tight">{product.name}</p>
+              <span className="text-slate-400 text-xs opacity-0 group-hover:opacity-100">✏️</span>
+            </button>
+          )}
           <p className="text-xs text-slate-500">{product.category}</p>
         </div>
 

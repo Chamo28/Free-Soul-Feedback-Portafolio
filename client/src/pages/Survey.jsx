@@ -22,6 +22,10 @@ export default function Survey() {
   // muy rápidos pueden disparar el submit dos veces antes de que React
   // vuelva a renderizar el botón con disabled=true.
   const submittingRef = useRef(false);
+  // ID único de ESTE intento de envío (uno solo por visita a la página, se
+  // reenvía igual si hay que reintentar). Así el backend puede distinguir
+  // "el mismo envío otra vez" de "otro evaluador que calificó igual".
+  const submissionIdRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     getProduct(productId)
@@ -48,6 +52,7 @@ export default function Survey() {
         precio,
         compraria,
         comentarios,
+        submissionId: submissionIdRef.current,
       });
       navigate(`/survey/${productId}/gracias`);
     } catch (err) {

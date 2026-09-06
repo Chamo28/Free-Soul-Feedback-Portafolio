@@ -22,6 +22,10 @@ export default function Curation() {
   // muy rápidos en "Enviar selección" pueden disparar el submit dos veces
   // antes de que React vuelva a renderizar el botón con disabled=true.
   const submittingRef = useRef(false);
+  // ID único de ESTE intento de envío (uno solo por visita a la página, se
+  // reenvía igual si hay que reintentar). Así el backend puede distinguir
+  // "el mismo envío otra vez" de "otro evaluador que eligió lo mismo".
+  const submissionIdRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     getCurationSurvey(surveyId)
@@ -70,6 +74,7 @@ export default function Curation() {
         evaluador,
         selectedProductIds: selected,
         comentarios,
+        submissionId: submissionIdRef.current,
       });
       navigate(`/curacion/${surveyId}/gracias`);
     } catch (err) {

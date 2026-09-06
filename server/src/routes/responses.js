@@ -12,7 +12,7 @@ function isValidScore(n) {
 }
 
 router.post("/", async (req, res) => {
-  const { productId, evaluador, atractivo, calidad, precio, compraria, comentarios } = req.body || {};
+  const { productId, evaluador, atractivo, calidad, precio, compraria, comentarios, submissionId } = req.body || {};
 
   const product = getProductById(productId);
   if (!product) return res.status(404).json({ error: "Producto no encontrado." });
@@ -27,27 +27,22 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "Compraría debe ser sí/no." });
   }
 
-  // Red de seguridad contra envíos duplicados (doble-tap en mobile, reintento
-  // de red, etc.): si llega una respuesta idéntica para este producto en los
-  // últimos 15s, se responde igual sin crear otra fila.
-  const DUPLICATE_WINDOW_MS = 15000;
-  const now = Date.now();
-  const possibleDuplicate = getResponses().find(
-    (r) =>
-      r.productId === productId &&
-      now - new Date(r.fecha).getTime() < DUPLICATE_WINDOW_MS &&
-      r.atractivo === a &&
-      r.calidad === c &&
-      r.precio === p &&
-      r.compraria === compraria &&
-      (r.comentarios || "") === ((comentarios && String(comentarios).trim()) || "")
-  );
-  if (possibleDuplicate) {
-    return res.status(201).json({ ok: true, synced: possibleDuplicate.synced, duplicate: true });
+  // Red de seguridad contra el mismo envío repetido (doble-tap en mobile,
+  // reintento de red): el navegador genera un submissionId aleatorio UNA vez
+  // por visita y lo reenvía igual en cada intento. Si ya existe una respuesta
+  // con ese mismo submissionId, es literalmente el mismo envío. NO se compara
+  // por puntajes/comentario: dos evaluadores distintos que califican igual
+  // (muy común con escalas 1-5) deben quedar guardados cada uno por separado.
+  if (submissionId) {
+    const existing = getResponses().find((r) => r.productId === productId && r.submissionId === submissionId);
+    if (existing) {
+      return res.status(201).json({ ok: true, synced: existing.synced, duplicate: true });
+    }
   }
 
   const response = {
     id: crypto.randomUUID(),
+    submissionId: submissionId || null,
     productId,
     evaluador: (evaluador && String(evaluador).trim()) || "Anónimo",
     fecha: new Date().toISOString(),
