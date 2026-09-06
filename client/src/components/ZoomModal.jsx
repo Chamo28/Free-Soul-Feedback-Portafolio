@@ -1,4 +1,15 @@
+import { useEffect } from "react";
+
 export default function ZoomModal({ photo, name, onClose }) {
+  useEffect(() => {
+    if (!photo) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [photo, onClose]);
+
   if (!photo) return null;
   return (
     <div
