@@ -110,10 +110,69 @@ No requiere tocar código: al crear un producto, elige **"+ Nueva categoría..."
 
 Puedes ajustar estos umbrales en [server/src/services/scoring.js](server/src/services/scoring.js).
 
-## 8. Producción / despliegue
+## 8. Producción / despliegue permanente (Vercel + Render)
 
-Por ahora está pensado para correr localmente (`npm run dev`). Cuando quieras que evaluadores externos entren desde internet, hay que:
-- Desplegar `server/` en un host con Node (Render, Railway, Fly.io, VPS, etc.) y `client/` como sitio estático (Vercel, Netlify) apuntando su build a la URL del backend.
-- Cambiar el almacenamiento de fotos de disco local a algo persistente en la nube (S3, Cloudinary), ya que la mayoría de hostings gratuitos no conservan archivos subidos entre despliegues.
+La app ya está lista para desplegarse así: **backend en Render**, **frontend en Vercel**. Para la guía rápida (5 minutos), ver [DEPLOY.md](DEPLOY.md). Esta sección explica el detalle de cada paso y el porqué.
 
-Avísame cuando llegues a ese punto y lo dejamos configurado.
+### 8.1 Backend en Render
+
+1. Sube este repo a GitHub (ver [DEPLOY.md](DEPLOY.md) si aún no lo has hecho).
+2. En [render.com](https://render.com) → **New +** → **Blueprint** → conecta el repo. Render detecta [render.yaml](render.yaml) automáticamente y configura casi todo solo (root dir `server`, build `npm install`, start `npm start`, health check `/api/health`).
+3. Antes de confirmar, completa las variables marcadas como "de tu parte" en el dashboard de Render:
+   - `ADMIN_PASSWORD` — la clave del panel admin en producción (usa una distinta a la de desarrollo).
+   - `CORS_ORIGIN` — la dejas vacía por ahora, la completas en el paso 8.2 una vez tengas la URL de Vercel.
+   - `GOOGLE_SHEET_ID`, `GOOGLE_SHEET_TAB` y `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` — opcionales, ver 8.3.
+   - `JWT_SECRET` se genera solo (`generateValue: true` en el blueprint).
+4. **Importante — disco persistente**: [render.yaml](render.yaml) pide un disco de 1GB montado en `/var/data` (plan `starter`, de pago, ~USD 7/mes). Sin esto, **las fotos subidas y las respuestas guardadas localmente se borran en cada deploy o reinicio** — Render usa filesystem efímero por defecto. Si por ahora solo quieres probar sin costo, puedes cambiar `plan: starter` a `plan: free` y quitar el bloque `disk` en `render.yaml` antes de desplegar, pero ten en cuenta que perderás fotos/respuestas locales cada vez que Render reinicie el servicio (rara vez, pero pasa). Con Google Sheets configurado, las respuestas igual quedan seguras ahí aunque el disco se borre — solo se perderían las fotos y lo que esté pendiente de sincronizar.
+5. Al terminar el deploy, copia la URL pública que te da Render (algo como `https://freesoul-feedback-api.onrender.com`) — la necesitas para el frontend.
+
+### 8.2 Frontend en Vercel
+
+1. En [vercel.com](https://vercel.com) → **Add New** → **Project** → importa el mismo repo de GitHub.
+2. **Root Directory**: selecciona `client` (importante, si no Vercel intenta compilar la raíz del monorepo).
+3. Framework preset: Vercel detecta **Vite** solo.
+4. En **Environment Variables**, agrega:
+   ```
+   VITE_API_URL = https://freesoul-feedback-api.onrender.com
+   ```
+   (la URL real de tu backend en Render, del paso 8.1 — sin `/` al final).
+5. Deploy. Vercel te da una URL como `https://freesoul-feedback.vercel.app`.
+6. Vuelve a Render → tu servicio → Environment → completa `CORS_ORIGIN` con esa URL de Vercel (y tu dominio propio si ya lo conectaste, separados por coma) → guarda (Render redeploya solo).
+
+`client/vercel.json` ya incluye el rewrite necesario para que las rutas de React Router (`/admin`, `/survey/:id`, `/curacion/:id`, etc.) funcionen al refrescar o compartir un link directo.
+
+### 8.3 Google Sheets en producción
+
+En local usas un archivo `service-account.json` en disco — en Render no conviene subir ese archivo a git ni depender de que sobreviva un redeploy. En vez de eso, pega el JSON completo codificado en base64 en la variable `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`:
+
+```bash
+node -e "console.log(require('fs').readFileSync('server/credentials/service-account.json').toString('base64'))"
+```
+
+Copia esa salida (una sola línea larga) y pégala como valor de `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` en Render. Completa también `GOOGLE_SHEET_ID` y `GOOGLE_SHEET_TAB` (ver sección 4 de este README para los pasos de creación del Service Account y de compartir el Sheet, son los mismos).
+
+### 8.4 Mantener el servicio despierto 24/7
+
+Render (planes free/starter) suspende el servicio tras ~15 minutos sin tráfico; la primera visita después de eso tarda ~30-50s en "despertar" (cold start). `/api/health` ya existe para esto. Dos formas de evitarlo:
+
+- **Gratis**: configura un cron externo (ej. [cron-job.org](https://cron-job.org) o [UptimeRobot](https://uptimerobot.com)) que haga un `GET` a `https://tu-backend.onrender.com/api/health` cada 10 minutos. No es 100% garantizado por Render pero funciona bien en la práctica.
+- **Garantizado**: en el plan `starter` de pago, Render no suspende el servicio por inactividad — no necesitas el cron.
+
+### 8.5 Conectar tu dominio propio (ej. test.freesoulfashion.com.co)
+
+1. En el proyecto de Vercel → **Settings → Domains** → agrega `test.freesoulfashion.com.co`.
+2. Vercel te muestra el registro DNS exacto a crear. Normalmente, para un subdominio:
+   - Tipo **CNAME**, nombre `test`, valor `cname.vercel-dns.com`.
+   - (Si en cambio fuera el dominio raíz sin subdominio, Vercel pide un registro **A** apuntando a `76.76.21.21`.)
+3. Entra al panel DNS de donde compraste `freesoulfashion.com.co` (GoDaddy, Namecheap, tu proveedor local, etc.) y crea ese registro.
+4. Espera la propagación (minutos a un par de horas). Vercel emite el certificado SSL solo.
+5. Actualiza `CORS_ORIGIN` en Render agregando `https://test.freesoulfashion.com.co` a la lista (separado por coma del dominio de Vercel).
+
+### 8.6 Checklist antes de compartir el link con evaluadores reales
+
+- [ ] `ADMIN_PASSWORD` en Render es distinta a la de desarrollo local.
+- [ ] `CORS_ORIGIN` en Render incluye la URL final de Vercel (y tu dominio propio si aplica).
+- [ ] Disco persistente activo en Render (o Google Sheets configurado, para no depender solo del disco).
+- [ ] Google Sheets conectado y probado (sube un producto de prueba, responde la encuesta, revisa que la fila llegue al Sheet).
+- [ ] Cron de keep-alive activo (si usas plan free) o plan starter contratado.
+- [ ] Probaste el flujo completo desde un celular real con datos móviles (no wifi), no solo en el navegador de escritorio.
