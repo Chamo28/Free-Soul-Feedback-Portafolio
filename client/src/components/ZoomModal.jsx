@@ -17,7 +17,12 @@ export default function ZoomModal({ photo, name, onClose }) {
       onClick={onClose}
     >
       <div className="max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
-        <img src={photo} alt={name} className="w-full rounded-xl object-contain max-h-[80vh] mx-auto" />
+        <img
+          src={photo}
+          alt={name}
+          referrerPolicy="no-referrer"
+          className="w-full rounded-xl object-contain max-h-[80vh] mx-auto"
+        />
         <div className="flex items-center justify-between mt-3">
           <p className="text-white font-medium">{name}</p>
           <button

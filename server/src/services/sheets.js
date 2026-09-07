@@ -75,6 +75,7 @@ const PURCHASE_ORDERS_HEADER = [
   "Costo_Landed_Total_COP",
   "Origen_Curaduria",
   "Peso_Ponderado_Curaduria",
+  "URL_Imagen",
 ];
 
 const CURATION_RANKING_HEADER = [
@@ -308,6 +309,7 @@ export function rowsFromPurchaseOrder(order, computedItems) {
     item.costoLandedTotalCOP,
     item.curationMeta?.surveyName || "",
     item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
+    item.photos?.[0] || "",
   ]);
 }
 

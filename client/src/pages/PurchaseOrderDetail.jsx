@@ -27,9 +27,17 @@ function PhotoCell({ item, onZoom }) {
       <img
         src={photos[index]}
         alt={item.referencia}
+        referrerPolicy="no-referrer"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+          e.currentTarget.nextSibling?.classList.remove("hidden");
+        }}
         onClick={() => onZoom({ photo: photos[index], name: item.referencia })}
         className="w-14 h-14 print:w-28 print:h-28 rounded-lg object-cover cursor-zoom-in hover:opacity-80"
       />
+      <div className="hidden w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-[9px] text-center leading-tight px-1">
+        Imagen no disponible
+      </div>
       {photos.length > 1 && (
         <button
           type="button"
@@ -256,7 +264,8 @@ export default function PurchaseOrderDetail() {
             <p className="text-xs text-slate-500 mb-2">
               Columnas: <code>URL_Producto, URL_Imagen, Referencia</code> — una fila por imagen; si un producto tiene
               varias fotos, repite la misma URL de producto en varias filas. Acepta CSV (comas) o TXT (tabs), con o
-              sin encabezado.
+              sin encabezado. Las fotos se muestran directo desde su URL original (no se descargan ni se guardan en
+              este servidor), para no depender de almacenamiento propio.
             </p>
             <input
               ref={fileInputRef}

@@ -18,7 +18,6 @@ import {
   updateCurationSurveyItem,
 } from "../jsonStore.js";
 import { parseImportText } from "../services/csvParser.js";
-import { downloadImages } from "../services/imageDownloader.js";
 import { computeOrderSummary, DEFAULT_CATEGORY_FREIGHT_COP } from "../services/purchaseOrderCalc.js";
 import { writePurchaseOrderSheet, rowsFromPurchaseOrder } from "../services/sheets.js";
 import { computeCurationRankings } from "../services/curationScoring.js";
@@ -99,7 +98,12 @@ router.delete("/:id", requireAdmin, (req, res) => {
 });
 
 // --- Importación masiva CSV/TXT ---
-
+//
+// No se descarga ni guarda ninguna imagen en el disco del servidor: se
+// conserva tal cual la URL_Imagen pública del CSV/TXT (1688/Alibaba/etc.) y
+// se usa directamente como src en el <img> del cliente. Esto evita depender
+// del disco temporal de Render (se borra en cada redeploy/reinicio) y deja
+// la persistencia real en Google Sheets, sin costo de disco/almacenamiento.
 router.post("/:id/import", requireAdmin, async (req, res) => {
   const order = getPurchaseOrderById(req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
@@ -119,14 +123,9 @@ router.post("/:id/import", requireAdmin, async (req, res) => {
 
   for (const parsed of parsedItems) {
     const itemId = crypto.randomUUID();
-    const itemDir = path.join(UPLOADS_DIR, "purchase-orders", order.id, itemId);
-    const downloadResults = parsed.images.length > 0 ? await downloadImages(parsed.images, itemDir) : [];
-    const photos = downloadResults
-      .filter((r) => r.ok)
-      .map((r) => `/uploads/purchase-orders/${order.id}/${itemId}/${r.filename}`);
-    const failed = downloadResults.filter((r) => !r.ok);
-    if (failed.length > 0) {
-      imageWarnings.push(`"${parsed.referencia}": ${failed.length} foto(s) no se pudieron descargar.`);
+    const photos = parsed.images.filter((u) => typeof u === "string" && u.trim());
+    if (photos.length === 0) {
+      imageWarnings.push(`"${parsed.referencia}": no tiene ninguna URL de imagen.`);
     }
 
     newItems.push({
@@ -150,10 +149,10 @@ router.post("/:id/import", requireAdmin, async (req, res) => {
 
 // --- Traer productos ganadores de una Curaduría de Portafolio ---
 //
-// No se vuelve a descargar nada de 1688: las fotos ya están en nuestro
-// servidor desde la curaduría, así que se copian de ahí (más rápido, y
-// evita que el pedido dependa de que la curaduría de origen siga existiendo
-// más adelante — si se borrara, no se llevaría las fotos del pedido).
+// No se descarga ni copia ninguna imagen a disco: el pedido simplemente
+// reutiliza las mismas URLs/rutas de foto que ya tiene el producto en la
+// curaduría de origen (nada de fs.copyFileSync — cero escritura a disco
+// desde este módulo, en línea con no depender del disco temporal de Render).
 router.post("/:id/import-from-curation", requireAdmin, async (req, res) => {
   const order = getPurchaseOrderById(req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
@@ -176,21 +175,7 @@ router.post("/:id/import-from-curation", requireAdmin, async (req, res) => {
   const newItems = [];
   for (const curItem of selectedItems) {
     const itemId = crypto.randomUUID();
-    const srcPhotos = curItem.photos && curItem.photos.length ? curItem.photos : curItem.photo ? [curItem.photo] : [];
-    const destDir = path.join(UPLOADS_DIR, "purchase-orders", order.id, itemId);
-    fs.mkdirSync(destDir, { recursive: true });
-
-    const photos = [];
-    srcPhotos.forEach((relUrl, idx) => {
-      try {
-        const srcPath = path.join(UPLOADS_DIR, relUrl.replace(/^\/uploads[\\/]/, ""));
-        const destFilename = `img-${idx + 1}.jpg`;
-        fs.copyFileSync(srcPath, path.join(destDir, destFilename));
-        photos.push(`/uploads/purchase-orders/${order.id}/${itemId}/${destFilename}`);
-      } catch {
-        // si por algún motivo la foto fuente ya no existe, se omite sin romper el resto
-      }
-    });
+    const photos = curItem.photos && curItem.photos.length ? curItem.photos : curItem.photo ? [curItem.photo] : [];
 
     const rankRow = rankByProductId.get(curItem.id);
     const pct = rankRow?.pctPonderado || 0;
@@ -293,6 +278,7 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
     "Costo_Landed_Total_COP",
     "Origen_Curaduria",
     "Peso_Ponderado_Curaduria",
+    "URL_Imagen",
   ];
   const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [header.map(csvEscape).join(",")];
@@ -314,6 +300,7 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
         item.costoLandedTotalCOP,
         item.curationMeta?.surveyName || "",
         item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
+        item.photos?.[0] || "",
       ]
         .map(csvEscape)
         .join(",")
