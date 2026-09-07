@@ -1,14 +1,23 @@
-# FreeSoul · Feedback de Productos
+# Free Soul DNA · Plataforma de Operaciones
 
-App para validar nuevas líneas de producto (zapatos, camisetas, bolsos, accesorios) **antes** de importarlas, recopilando feedback estructurado de evaluadores reales.
+Ecosistema web interno de Free Soul DNA (marca de importación D2C/B2B de ropa, calzado y accesorios). Arquitectura: **Frontend en Vercel, Backend en Render, persistencia en Google Sheets** (con respaldo local si Sheets falla).
+
+Módulos:
+
+1. **Encuestas y Curaduría de Portafolio** — validar nuevas líneas de producto con evaluadores reales antes de importarlas.
+2. **Gestión de Pedidos y Sourcing** — construir y liquidar órdenes de compra a partir de links de 1688/Alibaba.
+3. Portal B2B de mayoristas/distribuidores — planeado.
+4. Dashboard operativo y de rentabilidad — planeado.
 
 ## Estructura
 
 ```
 freesoul-feedback/
-├── server/   → API Node/Express (productos, encuestas, Google Sheets)
+├── server/   → API Node/Express (productos, encuestas, pedidos, Google Sheets)
 └── client/   → App React + Tailwind (mobile-first)
 ```
+
+## Módulo 1: Encuestas y Curaduría de Portafolio
 
 El Admin puede crear dos tipos de dinámica, cada una con su propio link de evaluador:
 
@@ -109,6 +118,27 @@ No requiere tocar código: al crear un producto, elige **"+ Nueva categoría..."
 - **Renegociar**: cualquier otro caso intermedio.
 
 Puedes ajustar estos umbrales en [server/src/services/scoring.js](server/src/services/scoring.js).
+
+## Módulo 2: Gestión de Pedidos y Sourcing (`/admin/pedidos`)
+
+Herramienta para construir órdenes de compra a partir de links de proveedor (1688/Alibaba) y calcular el costo puesto en Colombia mientras se digitan cantidades y costos.
+
+**Flujo:**
+
+1. Crea un pedido con un nombre (ej. "Bolsos Octubre 2026").
+2. Importa un archivo CSV o TXT (o pégalo directo) con las columnas `URL_Producto, URL_Imagen, Referencia` — **una fila por imagen**; si un producto tiene varias fotos, repite la misma URL de producto en varias filas y la app las agrupa sola. Acepta con o sin encabezado.
+3. Al importar, la app **descarga y comprime cada foto en su propio servidor** (no depende de que el link de 1688 siga vivo ni de que ese sitio permita mostrarla desde otra página). Si una foto puntual falla al descargar, no bloquea el resto del pedido — queda como advertencia y el producto se sube igual sin esa imagen.
+4. En la grilla, digita por producto: Categoría, Género, Costo Unitario (en RMB), Cantidad por Empaque y Cantidad de Empaques. La app calcula en vivo:
+   - `Cantidad Total = Cantidad por Empaque × Cantidad de Empaques`
+   - `Costo Unitario USD = Costo Unitario RMB × Tasa RMB→USD` (la tasa se configura por pedido, en "⚙️ Tasas de conversión y flete")
+   - `Precio Total FOB (USD) = Costo Unitario USD × Cantidad Total`
+   - `Flete Total (COP) = Flete por unidad (según categoría, o el valor manual que pongas en esa fila) × Cantidad Total`
+   - `Costo Landed Total (COP) = Precio Total FOB × TRM (USD→COP) + Flete Total`
+5. El resumen superior consolida Total Productos, Unidades, Cajas, Inversión FOB y Costo Landed estimado.
+6. **Descargar CSV** genera un archivo listo para enviar al proveedor/agente de carga. **Exportar/Imprimir** abre el diálogo de impresión del navegador (elige "Guardar como PDF") con una vista limpia de fotos grandes.
+7. **Sincronizar con Sheets** guarda el pedido consolidado en la pestaña `Gestion_Pedidos` de tu Google Sheet (una fila por producto). Vuelve a sincronizar cuando edites algo — reemplaza solo las filas de ese pedido, no toca los demás.
+
+**Importante — las fotos de este módulo NO viven en Google Sheets** (Sheets no guarda imágenes, solo texto/números). Si el servidor de Render no tiene disco persistente contratado (ver sección de despliegue más abajo), las fotos descargadas —y los pedidos que no hayas sincronizado— se pueden perder en un reinicio del servicio. Sincroniza seguido y considera el disco persistente si vas a usar este módulo para pedidos reales.
 
 ## 8. Producción / despliegue permanente (Vercel + Render)
 

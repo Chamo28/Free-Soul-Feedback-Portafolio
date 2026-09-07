@@ -5,10 +5,12 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const linkClass = (path) =>
-    `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-      location.pathname === path ? "bg-brand-100 text-brand-700" : "text-white/80 hover:bg-white/10 hover:text-white"
+  const linkClass = (path, { exact = true } = {}) => {
+    const active = exact ? location.pathname === path : location.pathname.startsWith(path);
+    return `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+      active ? "bg-brand-100 text-brand-700" : "text-white/80 hover:bg-white/10 hover:text-white"
     }`;
+  };
 
   return (
     <nav className="bg-brand-700 sticky top-0 z-10 shadow-md">
@@ -26,6 +28,9 @@ export default function Navbar() {
           </Link>
           <Link className={linkClass("/admin/results")} to="/admin/results">
             Resultados
+          </Link>
+          <Link className={linkClass("/admin/pedidos", { exact: false })} to="/admin/pedidos">
+            Pedidos
           </Link>
           <button
             onClick={() => {

@@ -170,4 +170,68 @@ export async function deleteCurationResponse(id) {
   return data;
 }
 
+// --- Gestión de Pedidos y Sourcing ---
+
+function withResolvedPurchaseOrder(order) {
+  if (!order) return order;
+  return { ...order, items: (order.items || []).map((i) => ({ ...i, photos: (i.photos || []).map(resolvePhoto) })) };
+}
+
+export async function getPurchaseOrders() {
+  const { data } = await api.get("/purchase-orders");
+  return data;
+}
+
+export async function getPurchaseOrder(id) {
+  const { data } = await api.get(`/purchase-orders/${id}`);
+  return withResolvedPurchaseOrder(data);
+}
+
+export async function createPurchaseOrder(name) {
+  const { data } = await api.post("/purchase-orders", { name });
+  return withResolvedPurchaseOrder(data);
+}
+
+export async function updatePurchaseOrder(id, patch) {
+  const { data } = await api.patch(`/purchase-orders/${id}`, patch);
+  return withResolvedPurchaseOrder(data);
+}
+
+export async function deletePurchaseOrder(id) {
+  const { data } = await api.delete(`/purchase-orders/${id}`);
+  return data;
+}
+
+export async function importPurchaseOrderText(id, text) {
+  const { data } = await api.post(`/purchase-orders/${id}/import`, { text });
+  return withResolvedPurchaseOrder(data);
+}
+
+export async function updatePurchaseOrderItem(orderId, itemId, patch) {
+  const { data } = await api.patch(`/purchase-orders/${orderId}/items/${itemId}`, patch);
+  return data;
+}
+
+export async function deletePurchaseOrderItem(orderId, itemId) {
+  const { data } = await api.delete(`/purchase-orders/${orderId}/items/${itemId}`);
+  return data;
+}
+
+export async function syncPurchaseOrder(id) {
+  const { data } = await api.post(`/purchase-orders/${id}/sync`);
+  return data;
+}
+
+export async function downloadPurchaseOrderCsv(id, filename) {
+  const response = await api.get(`/purchase-orders/${id}/export.csv`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "pedido.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export default api;

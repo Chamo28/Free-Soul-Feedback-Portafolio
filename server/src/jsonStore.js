@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
-const DEFAULT_DB = { products: [], responses: [], curationSurveys: [], curationResponses: [] };
+const DEFAULT_DB = { products: [], responses: [], curationSurveys: [], curationResponses: [], purchaseOrders: [] };
 
 function ensureDb() {
   if (!fs.existsSync(DB_PATH)) {
@@ -172,4 +172,69 @@ export function deleteCurationResponse(id) {
   db.curationResponses = db.curationResponses.filter((r) => r.id !== id);
   writeDb(db);
   return db.curationResponses.length < before;
+}
+
+// --- Purchase orders (Gestión de Pedidos y Sourcing) ---
+export function getPurchaseOrders() {
+  return readDb().purchaseOrders;
+}
+
+export function getPurchaseOrderById(id) {
+  return readDb().purchaseOrders.find((o) => o.id === id) || null;
+}
+
+export function addPurchaseOrder(order) {
+  const db = readDb();
+  db.purchaseOrders.push(order);
+  writeDb(db);
+  return order;
+}
+
+export function deletePurchaseOrder(id) {
+  const db = readDb();
+  const before = db.purchaseOrders.length;
+  db.purchaseOrders = db.purchaseOrders.filter((o) => o.id !== id);
+  writeDb(db);
+  return db.purchaseOrders.length < before;
+}
+
+// patch: campos de nivel de pedido (name, tasaRMBaUSD, trmUSDaCOP, categoryFreightRates).
+export function updatePurchaseOrder(id, patch) {
+  const db = readDb();
+  const order = db.purchaseOrders.find((o) => o.id === id);
+  if (!order) return null;
+  Object.assign(order, patch);
+  writeDb(db);
+  return order;
+}
+
+// Reemplaza el array de items completo (usado tras importar un CSV/TXT).
+export function setPurchaseOrderItems(id, items) {
+  const db = readDb();
+  const order = db.purchaseOrders.find((o) => o.id === id);
+  if (!order) return null;
+  order.items = items;
+  writeDb(db);
+  return order;
+}
+
+export function updatePurchaseOrderItem(orderId, itemId, patch) {
+  const db = readDb();
+  const order = db.purchaseOrders.find((o) => o.id === orderId);
+  if (!order) return null;
+  const item = order.items.find((i) => i.id === itemId);
+  if (!item) return null;
+  Object.assign(item, patch);
+  writeDb(db);
+  return item;
+}
+
+export function deletePurchaseOrderItem(orderId, itemId) {
+  const db = readDb();
+  const order = db.purchaseOrders.find((o) => o.id === orderId);
+  if (!order) return false;
+  const before = order.items.length;
+  order.items = order.items.filter((i) => i.id !== itemId);
+  writeDb(db);
+  return order.items.length < before;
 }

@@ -9,6 +9,7 @@ import productsRoutes from "./routes/products.js";
 import responsesRoutes from "./routes/responses.js";
 import syncRoutes from "./routes/sync.js";
 import curationRoutes from "./routes/curation.js";
+import purchaseOrdersRoutes from "./routes/purchaseOrders.js";
 import { getStatus } from "./services/sheets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +45,7 @@ app.use("/api/products", productsRoutes);
 app.use("/api/responses", responsesRoutes);
 app.use("/api/sync", syncRoutes);
 app.use("/api/curation", curationRoutes);
+app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

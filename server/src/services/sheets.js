@@ -55,6 +55,26 @@ const CURATION_RESPONSES_HEADER = [
   "Respuesta_ID",
 ];
 
+const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
+
+const PURCHASE_ORDERS_HEADER = [
+  "Pedido_ID",
+  "Pedido_Nombre",
+  "Referencia",
+  "URL_Producto",
+  "Categoria",
+  "Genero",
+  "Costo_Unitario_RMB",
+  "Costo_Unitario_USD",
+  "Cantidad_Por_Empaque",
+  "Cantidad_Empaques",
+  "Cantidad_Total",
+  "Precio_Total_FOB_USD",
+  "Flete_Unitario_COP",
+  "Flete_Total_COP",
+  "Costo_Landed_Total_COP",
+];
+
 const CURATION_RANKING_HEADER = [
   "Producto_ID",
   "Producto",
@@ -172,6 +192,7 @@ export function getStatus() {
     tab: SHEET_TAB,
     curationResponsesTab: CURATION_RESPONSES_TAB,
     curationRankingTab: CURATION_RANKING_TAB,
+    purchaseOrdersTab: PURCHASE_ORDERS_TAB,
   };
 }
 
@@ -254,6 +275,64 @@ export async function writeCurationRankingSheet(surveyId, rows) {
       await client.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `${CURATION_RANKING_TAB}!A2`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: merged },
+      });
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// --- Gestión de Pedidos y Sourcing ---
+
+export function rowsFromPurchaseOrder(order, computedItems) {
+  return computedItems.map((item) => [
+    order.id,
+    order.name,
+    item.referencia,
+    item.productUrl,
+    item.categoria || "",
+    item.genero || "",
+    item.costoUnitarioRMB || 0,
+    item.costoUnitarioUSD,
+    item.cantidadPorEmpaque || 0,
+    item.cantidadEmpaques || 0,
+    item.cantidadTotal,
+    item.precioTotalFOB_USD,
+    item.fleteUnitarioCOP,
+    item.fleteTotalCOP,
+    item.costoLandedTotalCOP,
+  ]);
+}
+
+// Reescribe por completo las filas de UN pedido (identificado por Pedido_ID
+// en la columna A) dentro de la pestaña compartida — conserva las filas de
+// los demás pedidos. Se llama cada vez que el admin sincroniza manualmente.
+export async function writePurchaseOrderSheet(orderId, rows) {
+  const client = await getClient();
+  if (!client) return { ok: false, error: initError };
+  try {
+    await ensureTabExists(client, PURCHASE_ORDERS_TAB);
+    await ensureHeaderFor(client, PURCHASE_ORDERS_TAB, PURCHASE_ORDERS_HEADER);
+    const lastCol = colLetter(PURCHASE_ORDERS_HEADER.length);
+    const res = await client.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${PURCHASE_ORDERS_TAB}!A2:${lastCol}100000`,
+    });
+    const existing = res.data.values || [];
+    const others = existing.filter((r) => r[0] !== orderId); // columna Pedido_ID
+    const merged = [...others, ...rows];
+
+    await client.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: `${PURCHASE_ORDERS_TAB}!A2:${lastCol}100000`,
+    });
+    if (merged.length > 0) {
+      await client.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${PURCHASE_ORDERS_TAB}!A2`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: merged },
       });

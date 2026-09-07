@@ -9,6 +9,8 @@ import Results from "./pages/Results.jsx";
 import Survey from "./pages/Survey.jsx";
 import Curation from "./pages/Curation.jsx";
 import ThankYou from "./pages/ThankYou.jsx";
+import PurchaseOrdersList from "./pages/PurchaseOrdersList.jsx";
+import PurchaseOrderDetail from "./pages/PurchaseOrderDetail.jsx";
 
 function RequireAdmin({ children }) {
   if (!isAdminLoggedIn()) return <Navigate to="/admin/login" replace />;
@@ -50,6 +52,22 @@ export default function App() {
         element={
           <RequireAdmin>
             <Results />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/pedidos"
+        element={
+          <RequireAdmin>
+            <PurchaseOrdersList />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/pedidos/:id"
+        element={
+          <RequireAdmin>
+            <PurchaseOrderDetail />
           </RequireAdmin>
         }
       />
