@@ -76,6 +76,9 @@ const PURCHASE_ORDERS_HEADER = [
   "Origen_Curaduria",
   "Peso_Ponderado_Curaduria",
   "URL_Imagen",
+  "Comision_Agente_COP",
+  "Factor_Importacion_COP",
+  "Costo_Reetiquetado_Total_COP",
 ];
 
 const CURATION_RANKING_HEADER = [
@@ -310,6 +313,9 @@ export function rowsFromPurchaseOrder(order, computedItems) {
     item.curationMeta?.surveyName || "",
     item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
     item.photos?.[0] || "",
+    item.comisionAgenteTotalCOP || 0,
+    item.factorImportacionCOP || 0,
+    item.costoReetiquetadoTotalCOP || 0,
   ]);
 }
 

@@ -1,6 +1,10 @@
 // Mismas fórmulas que server/src/services/purchaseOrderCalc.js — se
 // duplican aquí para que la grilla calcule en vivo mientras el admin digita,
 // sin esperar la respuesta del servidor en cada tecla.
+//
+// Cadena de costeo hasta el Costo Landed: Costo RMB + % comisión agente de
+// compra → USD (tasa RMB→USD) → Precio FOB → COP (TRM) + % factor de
+// importación + Flete (por categoría o excepción) + Costo de reetiquetado.
 
 export const DEFAULT_CATEGORY_FREIGHT_COP = {
   Bolsos: 8000,
@@ -23,20 +27,36 @@ export function computeItem(item, order) {
   const cantidadEmpaques = Number(item.cantidadEmpaques) || 0;
   const tasaRMBaUSD = Number(order.tasaRMBaUSD) || 0;
   const trmUSDaCOP = Number(order.trmUSDaCOP) || 0;
+  const comisionAgentePct = Number(order.comisionAgentePct) || 0;
+  const factorImportacionPct = Number(order.factorImportacionPct) || 0;
+  const costoReetiquetadoUnitarioCOP = Number(order.costoReetiquetadoUnitarioCOP) || 0;
 
   const cantidadTotal = cantidadPorEmpaque * cantidadEmpaques;
-  const costoUnitarioUSD = costoUnitarioRMB * tasaRMBaUSD;
+
+  const costoUnitarioConComisionRMB = costoUnitarioRMB * (1 + comisionAgentePct / 100);
+  const costoUnitarioUSD = costoUnitarioConComisionRMB * tasaRMBaUSD;
   const precioTotalFOB_USD = costoUnitarioUSD * cantidadTotal;
+  const comisionAgenteTotalCOP = (costoUnitarioConComisionRMB - costoUnitarioRMB) * tasaRMBaUSD * cantidadTotal * trmUSDaCOP;
+
+  const fobTotalCOP = precioTotalFOB_USD * trmUSDaCOP;
+  const factorImportacionCOP = fobTotalCOP * (factorImportacionPct / 100);
+
   const fleteUnitarioCOP = freightPerUnitCOP(item, order);
   const fleteTotalCOP = fleteUnitarioCOP * cantidadTotal;
-  const costoLandedTotalCOP = precioTotalFOB_USD * trmUSDaCOP + fleteTotalCOP;
+
+  const costoReetiquetadoTotalCOP = costoReetiquetadoUnitarioCOP * cantidadTotal;
+
+  const costoLandedTotalCOP = fobTotalCOP + factorImportacionCOP + fleteTotalCOP + costoReetiquetadoTotalCOP;
 
   return {
     cantidadTotal,
     costoUnitarioUSD: round2(costoUnitarioUSD),
     precioTotalFOB_USD: round2(precioTotalFOB_USD),
+    comisionAgenteTotalCOP: Math.round(comisionAgenteTotalCOP),
     fleteUnitarioCOP,
     fleteTotalCOP: Math.round(fleteTotalCOP),
+    factorImportacionCOP: Math.round(factorImportacionCOP),
+    costoReetiquetadoTotalCOP: Math.round(costoReetiquetadoTotalCOP),
     costoLandedTotalCOP: Math.round(costoLandedTotalCOP),
   };
 }

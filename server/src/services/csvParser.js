@@ -73,11 +73,15 @@ export function parseImportText(text) {
     dataStart = 1;
   }
 
-  if (colIndex.url_producto == null || colIndex.url_imagen == null) {
+  // Solo la columna de URL de producto es obligatoria: la de imagen y la de
+  // referencia son opcionales. Un archivo sin fotos (o incompleto) igual debe
+  // poder importarse — el admin completa lo que falte después, a mano, en
+  // la grilla del pedido.
+  if (colIndex.url_producto == null) {
     return {
       items: [],
       warnings: [
-        "No se pudo identificar las columnas de URL de producto y URL de imagen. Usa encabezados como 'URL_Producto' y 'URL_Imagen', o el orden fijo (producto, imagen, referencia) sin encabezado.",
+        "No se pudo identificar la columna de URL de producto. Usa un encabezado como 'URL_Producto', o el orden fijo (producto, imagen, referencia) sin encabezado.",
       ],
     };
   }
@@ -88,7 +92,7 @@ export function parseImportText(text) {
   for (let i = dataStart; i < lines.length; i++) {
     const cells = splitLine(lines[i], delimiter);
     const productUrl = (cells[colIndex.url_producto] || "").trim();
-    const imageUrl = (cells[colIndex.url_imagen] || "").trim();
+    const imageUrl = colIndex.url_imagen != null ? (cells[colIndex.url_imagen] || "").trim() : "";
     const referencia = colIndex.referencia != null ? (cells[colIndex.referencia] || "").trim() : "";
 
     if (!productUrl) {

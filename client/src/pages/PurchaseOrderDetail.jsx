@@ -7,6 +7,7 @@ import {
   updatePurchaseOrder,
   importPurchaseOrderText,
   updatePurchaseOrderItem,
+  addPurchaseOrderItem,
   deletePurchaseOrderItem,
   syncPurchaseOrder,
   downloadPurchaseOrderCsv,
@@ -16,41 +17,54 @@ import { computeOrderSummary, formatCOP, formatUSD } from "../utils/purchaseOrde
 const CATEGORIAS = ["Bolsos", "Calzado", "Ropa", "Accesorios"];
 const GENEROS = ["Mujer", "Hombre", "Infantil", "Unisex"];
 
-function PhotoCell({ item, onZoom }) {
+function PhotoCell({ item, onZoom, onSavePhoto }) {
   const [index, setIndex] = useState(0);
   const photos = item.photos || [];
-  if (photos.length === 0) {
-    return <div className="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300 text-xs">Sin foto</div>;
-  }
+
   return (
-    <div className="relative w-14 h-14 flex-shrink-0">
-      <img
-        src={photos[index]}
-        alt={item.referencia}
-        referrerPolicy="no-referrer"
-        onError={(e) => {
-          e.currentTarget.style.display = "none";
-          e.currentTarget.nextSibling?.classList.remove("hidden");
-        }}
-        onClick={() => onZoom({ photo: photos[index], name: item.referencia })}
-        className="w-14 h-14 print:w-28 print:h-28 rounded-lg object-cover cursor-zoom-in hover:opacity-80"
-      />
-      <div className="hidden w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-[9px] text-center leading-tight px-1">
-        Imagen no disponible
-      </div>
-      {photos.length > 1 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIndex((i) => (i + 1) % photos.length);
-          }}
-          className="print:hidden absolute -bottom-1 -right-1 bg-brand-700 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center"
-          title="Ver siguiente foto"
-        >
-          {index + 1}/{photos.length}
-        </button>
+    <div className="w-28 flex-shrink-0">
+      {photos.length === 0 ? (
+        <div className="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300 text-[10px] text-center leading-tight px-1">
+          Sin foto
+        </div>
+      ) : (
+        <div className="relative w-14 h-14">
+          <img
+            src={photos[index]}
+            alt={item.referencia}
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+              e.currentTarget.nextSibling?.classList.remove("hidden");
+            }}
+            onClick={() => onZoom({ photo: photos[index], name: item.referencia })}
+            className="w-14 h-14 print:w-28 print:h-28 rounded-lg object-cover cursor-zoom-in hover:opacity-80"
+          />
+          <div className="hidden w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-[9px] text-center leading-tight px-1">
+            Imagen no disponible
+          </div>
+          {photos.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIndex((i) => (i + 1) % photos.length);
+              }}
+              className="print:hidden absolute -bottom-1 -right-1 bg-brand-700 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center"
+              title="Ver siguiente foto"
+            >
+              {index + 1}/{photos.length}
+            </button>
+          )}
+        </div>
       )}
+      <input
+        defaultValue={photos[0] || ""}
+        onBlur={(e) => onSavePhoto(e.target.value.trim())}
+        placeholder="+ URL de imagen"
+        title="Pega o corrige el link directo de la foto"
+        className="print:hidden mt-1 w-full text-[10px] border border-slate-200 rounded px-1 py-0.5 text-slate-500"
+      />
     </div>
   );
 }
@@ -138,6 +152,17 @@ export default function PurchaseOrderDetail() {
     await deletePurchaseOrderItem(id, itemId);
   };
 
+  const handleAddItem = async () => {
+    const updated = await addPurchaseOrderItem(id, {});
+    setOrder(updated);
+  };
+
+  const savePhoto = (itemId, url) => {
+    const photos = url ? [url] : [];
+    patchItemLocal(itemId, { photos });
+    saveItem(itemId, { photos });
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -204,19 +229,34 @@ export default function PurchaseOrderDetail() {
             onClick={() => setRatesOpen((v) => !v)}
             className="text-sm font-medium text-slate-700 flex items-center gap-1"
           >
-            ⚙️ Tasas de conversión y flete {ratesOpen ? "▲" : "▼"}
+            ⚙️ Tasas, comisiones y flete (para el Costo Landed) {ratesOpen ? "▲" : "▼"}
           </button>
           {ratesOpen && (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
               <RateInput
-                label="Tasa RMB → USD"
+                label="TRM Yuan → Dólar"
                 value={order.tasaRMBaUSD}
                 onCommit={(v) => patchOrderField({ tasaRMBaUSD: Number(v) || 0 })}
               />
               <RateInput
-                label="TRM (USD → COP)"
+                label="TRM Dólar → Peso"
                 value={order.trmUSDaCOP}
                 onCommit={(v) => patchOrderField({ trmUSDaCOP: Number(v) || 0 })}
+              />
+              <RateInput
+                label="% Comisión agente de compra"
+                value={order.comisionAgentePct ?? 0}
+                onCommit={(v) => patchOrderField({ comisionAgentePct: Number(v) || 0 })}
+              />
+              <RateInput
+                label="% Factor de importación"
+                value={order.factorImportacionPct ?? 0}
+                onCommit={(v) => patchOrderField({ factorImportacionPct: Number(v) || 0 })}
+              />
+              <RateInput
+                label="Costo reetiquetado (COP/unidad)"
+                value={order.costoReetiquetadoUnitarioCOP ?? 0}
+                onCommit={(v) => patchOrderField({ costoReetiquetadoUnitarioCOP: Number(v) || 0 })}
               />
               <div />
               {CATEGORIAS.map((cat) => (
@@ -238,6 +278,9 @@ export default function PurchaseOrderDetail() {
             className="text-sm bg-brand-600 text-white rounded-lg px-3 py-1.5"
           >
             📥 Importar CSV/TXT
+          </button>
+          <button onClick={handleAddItem} className="text-sm border border-slate-300 rounded-lg px-3 py-1.5">
+            + Agregar producto manual
           </button>
           <button
             onClick={() => downloadPurchaseOrderCsv(id, `pedido_${order.name}.csv`)}
@@ -308,7 +351,7 @@ export default function PurchaseOrderDetail() {
 
         {items.length === 0 && (
           <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500">
-            Todavía no importas ningún producto. Usa "Importar CSV/TXT" arriba.
+            Todavía no importas ningún producto. Usa "Importar CSV/TXT" o "+ Agregar producto manual" arriba.
           </div>
         )}
 
@@ -334,7 +377,7 @@ export default function PurchaseOrderDetail() {
                 {items.map((item) => (
                   <tr key={item.id} className="border-b border-slate-100 align-middle">
                     <td className="p-2">
-                      <PhotoCell item={item} onZoom={setZoomItem} />
+                      <PhotoCell item={item} onZoom={setZoomItem} onSavePhoto={(url) => savePhoto(item.id, url)} />
                     </td>
                     <td className="p-2">
                       <input
@@ -345,16 +388,29 @@ export default function PurchaseOrderDetail() {
                         }}
                         className="w-full border border-slate-200 rounded px-1.5 py-1 text-sm mb-1"
                       />
-                      {item.productUrl && (
-                        <a
-                          href={item.productUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-brand-600 underline print:hidden"
-                        >
-                          🔗 ver producto
-                        </a>
-                      )}
+                      <div className="flex items-center gap-1 print:hidden">
+                        <input
+                          defaultValue={item.productUrl || ""}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            patchItemLocal(item.id, { productUrl: v });
+                            saveItem(item.id, { productUrl: v });
+                          }}
+                          placeholder="+ Link del producto (1688/Alibaba)"
+                          className="flex-1 min-w-0 text-xs border border-slate-200 rounded px-1.5 py-1 text-slate-500"
+                        />
+                        {item.productUrl && (
+                          <a
+                            href={item.productUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-brand-600 flex-shrink-0"
+                            title="Abrir producto"
+                          >
+                            🔗
+                          </a>
+                        )}
+                      </div>
                       {item.curationMeta && (
                         <p
                           className="text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 mt-1 inline-block"

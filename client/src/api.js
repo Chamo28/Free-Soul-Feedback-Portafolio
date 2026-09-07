@@ -230,6 +230,13 @@ export async function importPurchaseOrderText(id, text) {
   return withResolvedPurchaseOrder(data);
 }
 
+// Agrega un producto vacío al pedido para completarlo a mano (cubre un
+// CSV/TXT incompleto, o simplemente sumar un producto suelto).
+export async function addPurchaseOrderItem(orderId, payload = {}) {
+  const { data } = await api.post(`/purchase-orders/${orderId}/items`, payload);
+  return withResolvedPurchaseOrder(data);
+}
+
 export async function updatePurchaseOrderItem(orderId, itemId, patch) {
   const { data } = await api.patch(`/purchase-orders/${orderId}/items/${itemId}`, patch);
   return data;

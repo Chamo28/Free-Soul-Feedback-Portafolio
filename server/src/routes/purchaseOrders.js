@@ -59,6 +59,9 @@ router.post("/", requireAdmin, (req, res) => {
     createdAt: new Date().toISOString(),
     tasaRMBaUSD: 0.14,
     trmUSDaCOP: 4000,
+    comisionAgentePct: 0,
+    factorImportacionPct: 0,
+    costoReetiquetadoUnitarioCOP: 0,
     categoryFreightRates: { ...DEFAULT_CATEGORY_FREIGHT_COP },
     items: [],
   };
@@ -80,6 +83,10 @@ router.patch("/:id", requireAdmin, (req, res) => {
   if (typeof req.body.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
   if (req.body.tasaRMBaUSD != null) patch.tasaRMBaUSD = Number(req.body.tasaRMBaUSD) || 0;
   if (req.body.trmUSDaCOP != null) patch.trmUSDaCOP = Number(req.body.trmUSDaCOP) || 0;
+  if (req.body.comisionAgentePct != null) patch.comisionAgentePct = Number(req.body.comisionAgentePct) || 0;
+  if (req.body.factorImportacionPct != null) patch.factorImportacionPct = Number(req.body.factorImportacionPct) || 0;
+  if (req.body.costoReetiquetadoUnitarioCOP != null)
+    patch.costoReetiquetadoUnitarioCOP = Number(req.body.costoReetiquetadoUnitarioCOP) || 0;
   if (req.body.categoryFreightRates && typeof req.body.categoryFreightRates === "object") {
     patch.categoryFreightRates = { ...order.categoryFreightRates, ...req.body.categoryFreightRates };
   }
@@ -214,6 +221,31 @@ router.post("/:id/import-from-curation", requireAdmin, async (req, res) => {
 
 // --- Items individuales ---
 
+// Agrega un producto vacío al pedido para completarlo a mano — cubre el caso
+// de un CSV/TXT incompleto (sin fotos, sin algún dato) o cuando simplemente
+// se quiere sumar un producto suelto que no vino de ningún archivo.
+router.post("/:id/items", requireAdmin, (req, res) => {
+  const order = getPurchaseOrderById(req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
+
+  const { referencia, productUrl } = req.body || {};
+  const newItem = {
+    id: crypto.randomUUID(),
+    productUrl: typeof productUrl === "string" ? productUrl.trim() : "",
+    referencia: typeof referencia === "string" && referencia.trim() ? referencia.trim() : "Producto nuevo",
+    photos: [],
+    categoria: "",
+    genero: "",
+    costoUnitarioRMB: 0,
+    cantidadPorEmpaque: 0,
+    cantidadEmpaques: 0,
+    fleteOverrideCOP: null,
+  };
+  const updatedOrder = setPurchaseOrderItems(order.id, [...order.items, newItem]);
+  const { items, totales } = computeOrderSummary(updatedOrder);
+  res.status(201).json({ ...updatedOrder, items, totales });
+});
+
 router.patch("/:id/items/:itemId", requireAdmin, (req, res) => {
   const order = getPurchaseOrderById(req.params.id);
   if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
@@ -226,10 +258,24 @@ router.patch("/:id/items/:itemId", requireAdmin, (req, res) => {
     "cantidadEmpaques",
     "fleteOverrideCOP",
     "referencia",
+    "productUrl",
+    "photos",
   ];
   const patch = {};
   for (const key of allowed) {
     if (key in (req.body || {})) patch[key] = req.body[key];
+  }
+  // "photos" puede llegar como string (un solo link, o varios separados por
+  // coma) desde el input de la grilla — se normaliza siempre a array.
+  if ("photos" in patch) {
+    if (typeof patch.photos === "string") {
+      patch.photos = patch.photos
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (!Array.isArray(patch.photos)) {
+      patch.photos = [];
+    }
   }
   const updated = updatePurchaseOrderItem(req.params.id, req.params.itemId, patch);
   if (!updated) return res.status(404).json({ error: "Producto no encontrado en este pedido." });
@@ -279,6 +325,9 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
     "Origen_Curaduria",
     "Peso_Ponderado_Curaduria",
     "URL_Imagen",
+    "Comision_Agente_COP",
+    "Factor_Importacion_COP",
+    "Costo_Reetiquetado_Total_COP",
   ];
   const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [header.map(csvEscape).join(",")];
@@ -301,6 +350,9 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
         item.curationMeta?.surveyName || "",
         item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
         item.photos?.[0] || "",
+        item.comisionAgenteTotalCOP,
+        item.factorImportacionCOP,
+        item.costoReetiquetadoTotalCOP,
       ]
         .map(csvEscape)
         .join(",")
