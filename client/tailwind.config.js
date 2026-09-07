@@ -14,6 +14,17 @@ export default {
           700: "#1d2a43", // navy exacto del logo (hover, headers)
           900: "#141d30",
         },
+        // Taupe/arena cálido para acentos secundarios (Operations Suite),
+        // complementa al navy sin competir con él.
+        sand: {
+          50: "#faf7f5",
+          100: "#f3ece7",
+          300: "#e3d3c8",
+          500: "#d4c5b9",
+          600: "#b9a690",
+          700: "#93816c",
+          800: "#6b5a48",
+        },
       },
       fontFamily: {
         display: ["Poppins", "system-ui", "sans-serif"],

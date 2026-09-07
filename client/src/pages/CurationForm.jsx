@@ -152,7 +152,7 @@ export default function CurationForm() {
               Copiar link
             </button>
             <button
-              onClick={() => navigate("/admin")}
+              onClick={() => navigate("/admin/curaduria")}
               className="border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium"
             >
               Volver a productos

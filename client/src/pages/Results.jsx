@@ -39,10 +39,10 @@ export default function Results() {
         <Navbar />
       </div>
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex gap-2 mb-5 print:hidden">
+        <div className="flex gap-2 mb-5 print:hidden overflow-x-auto">
           <button
             onClick={() => setTab("detallada")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
               tab === "detallada" ? "bg-brand-600 text-white" : "bg-white border border-slate-300 text-slate-600"
             }`}
           >
@@ -50,7 +50,7 @@ export default function Results() {
           </button>
           <button
             onClick={() => setTab("curaduria")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
               tab === "curaduria" ? "bg-brand-600 text-white" : "bg-white border border-slate-300 text-slate-600"
             }`}
           >

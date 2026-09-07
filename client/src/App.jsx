@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { isAdminLoggedIn } from "./api.js";
 
 import AdminLogin from "./pages/AdminLogin.jsx";
+import Home from "./pages/Home.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import ProductForm from "./pages/ProductForm.jsx";
 import CurationForm from "./pages/CurationForm.jsx";
@@ -25,6 +26,14 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route
         path="/admin"
+        element={
+          <RequireAdmin>
+            <Home />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/curaduria"
         element={
           <RequireAdmin>
             <AdminDashboard />

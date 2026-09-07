@@ -47,7 +47,7 @@ export default function PurchaseOrdersList() {
           Importa tus links de 1688/Alibaba, digita cantidades y costos, y calcula el costo puesto en Colombia.
         </p>
 
-        <form onSubmit={handleCreate} className="flex gap-2 mb-6">
+        <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2 mb-6">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
