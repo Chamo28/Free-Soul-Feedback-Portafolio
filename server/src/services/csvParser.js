@@ -1,13 +1,28 @@
-// Parsea el archivo de importación de pedidos: una fila por imagen, agrupada
-// por URL de producto repetida. Acepta CSV (coma) o TXT (tab), con o sin fila
-// de encabezado (si detecta nombres de columna conocidos, los usa; si no,
-// asume el orden fijo URL_Producto, URL_Imagen, Referencia).
+// Parsea el archivo de importación de pedidos/curadurías.
+//
+// Acepta DOS formatos, autodetectados por el encabezado:
+//
+// 1) "Columnas independientes" (recomendado, más amigable en Excel): una
+//    fila por producto, con una columna por cada foto —
+//    URL_Producto, Referencia, URL_Imagen_1, URL_Imagen_2, URL_Imagen_3...
+//    (el número de columnas de imagen es libre, se detectan todas).
+//
+// 2) "Una fila por imagen" (formato largo, útil si el archivo viene
+//    generado desde otro sistema): URL_Producto, URL_Imagen, Referencia —
+//    si un producto tiene varias fotos, se repite la misma URL de producto
+//    en varias filas.
+//
+// En ambos casos, con o sin fila de encabezado (sin encabezado se asume el
+// orden fijo URL_Producto, URL_Imagen, Referencia — formato largo).
 
 const HEADER_ALIASES = {
   url_producto: ["url_producto", "urlproducto", "product_url", "link", "link_producto", "producto"],
   url_imagen: ["url_imagen", "urlimagen", "image_url", "imagen", "imagen_url", "foto", "img"],
   referencia: ["referencia", "nombre", "reference", "name", "ref"],
 };
+
+// Nombres de columna de imagen numerada: URL_Imagen_1, Imagen2, Foto_3, IMG4...
+const NUMBERED_IMAGE_RE = /^(?:url_imagen|urlimagen|image_url|imagen|foto|img)_?([0-9]+)$/;
 
 function detectDelimiter(line) {
   const tabs = (line.match(/\t/g) || []).length;
@@ -59,10 +74,15 @@ export function parseImportText(text) {
 
   let colIndex = { url_producto: 0, url_imagen: 1, referencia: 2 };
   let dataStart = 0;
+  let imageColIndexes = []; // índices de columnas de imagen, en orden (formato "columnas independientes")
 
-  const looksLikeHeader = normalizedFirst.some((cell) =>
-    Object.values(HEADER_ALIASES).some((aliases) => aliases.includes(cell))
-  );
+  const numberedImageCols = normalizedFirst
+    .map((cell, idx) => ({ idx, match: cell.match(NUMBERED_IMAGE_RE) }))
+    .filter((c) => c.match);
+
+  const looksLikeHeader =
+    numberedImageCols.length > 0 ||
+    normalizedFirst.some((cell) => Object.values(HEADER_ALIASES).some((aliases) => aliases.includes(cell)));
 
   if (looksLikeHeader) {
     colIndex = {};
@@ -71,6 +91,15 @@ export function parseImportText(text) {
       if (idx !== -1) colIndex[key] = idx;
     }
     dataStart = 1;
+
+    if (numberedImageCols.length > 0) {
+      // Formato "columnas independientes": una columna por foto. Se ordenan
+      // por su número (Imagen_1, Imagen_2...) para que el orden sea estable.
+      imageColIndexes = numberedImageCols
+        .sort((a, b) => Number(a.match[1]) - Number(b.match[1]))
+        .map((c) => c.idx);
+      delete colIndex.url_imagen; // se usa imageColIndexes en su lugar
+    }
   }
 
   // Solo la columna de URL de producto es obligatoria: la de imagen y la de
@@ -86,14 +115,19 @@ export function parseImportText(text) {
     };
   }
 
-  const groups = new Map(); // url_producto -> { productUrl, referencia, images: Set }
+  const groups = new Map(); // url_producto -> { productUrl, referencia, images: [] }
   const warnings = [];
 
   for (let i = dataStart; i < lines.length; i++) {
     const cells = splitLine(lines[i], delimiter);
     const productUrl = (cells[colIndex.url_producto] || "").trim();
-    const imageUrl = colIndex.url_imagen != null ? (cells[colIndex.url_imagen] || "").trim() : "";
     const referencia = colIndex.referencia != null ? (cells[colIndex.referencia] || "").trim() : "";
+    const rowImages =
+      imageColIndexes.length > 0
+        ? imageColIndexes.map((idx) => (cells[idx] || "").trim()).filter(Boolean)
+        : colIndex.url_imagen != null
+          ? [(cells[colIndex.url_imagen] || "").trim()].filter(Boolean)
+          : [];
 
     if (!productUrl) {
       warnings.push(`Fila ${i + 1}: sin URL de producto, se omite.`);
@@ -105,7 +139,9 @@ export function parseImportText(text) {
     }
     const group = groups.get(productUrl);
     if (!group.referencia && referencia) group.referencia = referencia;
-    if (imageUrl && !group.images.includes(imageUrl)) group.images.push(imageUrl);
+    for (const imageUrl of rowImages) {
+      if (imageUrl && !group.images.includes(imageUrl)) group.images.push(imageUrl);
+    }
   }
 
   const items = Array.from(groups.values()).map((g, i) => ({

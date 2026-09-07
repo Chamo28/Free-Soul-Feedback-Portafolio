@@ -301,11 +301,20 @@ export default function CurationForm() {
                 Links de producto y foto (CSV/TXT)
               </label>
               <p className="text-xs text-slate-500 mb-2">
-                Columnas: <code>URL_Producto, URL_Imagen, Referencia</code> — una fila por imagen; si un producto
-                tiene varias fotos, repite la misma URL de producto en varias filas. Acepta CSV (comas) o TXT (tabs),
-                con o sin encabezado. Cada URL de producto distinta se convierte en un producto a evaluar; luego podrás
-                aprobar productos de esta curaduría para llevarlos directo a un pedido.
+                <b>Recomendado — una fila por producto, columnas independientes:</b>{" "}
+                <code>URL_Producto, Referencia, URL_Imagen_1, URL_Imagen_2, URL_Imagen_3...</code> (agrega tantas
+                columnas <code>URL_Imagen_N</code> como fotos necesites). También acepta el formato largo (una fila
+                por imagen, repitiendo la misma URL de producto). Acepta CSV (comas) o TXT (tabs). Cada URL de
+                producto distinta se convierte en un producto a evaluar; luego podrás aprobar productos de esta
+                curaduría para llevarlos directo a un pedido.
               </p>
+              <a
+                href="/plantilla_pedidos.csv"
+                download
+                className="inline-block text-xs text-brand-600 underline mb-2"
+              >
+                📋 Descargar plantilla CSV (columnas independientes — ábrela en Excel, llénala y sube el archivo)
+              </a>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -318,7 +327,7 @@ export default function CurationForm() {
                 onChange={(e) => setImportText(e.target.value)}
                 rows={6}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs"
-                placeholder="URL_Producto,URL_Imagen,Referencia&#10;https://1688.com/prod1,https://cbu01.alicdn.com/img1.jpg,Bolso A"
+                placeholder="URL_Producto,Referencia,URL_Imagen_1,URL_Imagen_2&#10;https://1688.com/prod1,Bolso A,https://cbu01.alicdn.com/img1.jpg,https://cbu01.alicdn.com/img2.jpg"
               />
             </div>
           )}

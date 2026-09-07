@@ -295,18 +295,20 @@ export default function PurchaseOrderDetail() {
           <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 print:hidden">
             <p className="text-sm font-medium text-slate-700 mb-1">Importar productos</p>
             <p className="text-xs text-slate-500 mb-2">
-              Columnas: <code>URL_Producto, URL_Imagen, Referencia</code> — una fila por imagen; si un producto tiene
-              varias fotos, repite la misma URL de producto en varias filas. Si todavía no tienes la foto de un
-              producto, deja esa celda vacía: igual se importa y le agregas el link después en la grilla. Acepta CSV
-              (comas) o TXT (tabs), con o sin encabezado. Las fotos se muestran directo desde su URL original (no se
-              descargan ni se guardan en este servidor), para no depender de almacenamiento propio.
+              <b>Recomendado — una fila por producto, columnas independientes:</b>{" "}
+              <code>URL_Producto, Referencia, URL_Imagen_1, URL_Imagen_2, URL_Imagen_3...</code> (agrega tantas
+              columnas <code>URL_Imagen_N</code> como fotos tenga tu producto más grande; deja vacías las que no
+              apliquen). También acepta el formato largo (una fila por imagen, repitiendo la misma URL de producto).
+              Si todavía no tienes la foto de un producto, deja esas celdas vacías: igual se importa y le agregas el
+              link después en la grilla. Acepta CSV (comas) o TXT (tabs). Las fotos se muestran directo desde su URL
+              original (no se descargan ni se guardan en este servidor), para no depender de almacenamiento propio.
             </p>
             <a
               href="/plantilla_pedidos.csv"
               download
               className="inline-block text-xs text-brand-600 underline mb-2"
             >
-              📋 Descargar plantilla CSV (ábrela en Excel, llénala y sube el archivo)
+              📋 Descargar plantilla CSV (columnas independientes — ábrela en Excel, llénala y sube el archivo)
             </a>
             <input
               ref={fileInputRef}
