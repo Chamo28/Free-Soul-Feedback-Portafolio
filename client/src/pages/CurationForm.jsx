@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getCategories, createCurationSurvey, createCurationSurveyFromLinks } from "../api.js";
 import { compressImageFiles } from "../utils/compressImage.js";
+import { readImportFile } from "../utils/readImportFile.js";
 import Navbar from "../components/Navbar.jsx";
 
 export default function CurationForm() {
@@ -50,9 +51,9 @@ export default function CurationForm() {
   const handleImportFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImportText(String(reader.result || ""));
-    reader.readAsText(file);
+    readImportFile(file)
+      .then((text) => setImportText(text))
+      .catch(() => setError("No se pudo leer el archivo. Verifica que sea un .xlsx, .csv o .txt válido."));
   };
 
   const handleSubmit = async (e) => {
@@ -298,27 +299,27 @@ export default function CurationForm() {
           ) : (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Links de producto y foto (CSV/TXT)
+                Links de producto y foto (Excel o CSV/TXT)
               </label>
               <p className="text-xs text-slate-500 mb-2">
                 <b>Recomendado — una fila por producto, columnas independientes:</b>{" "}
                 <code>URL_Producto, Referencia, URL_Imagen_1, URL_Imagen_2, URL_Imagen_3...</code> (agrega tantas
-                columnas <code>URL_Imagen_N</code> como fotos necesites). También acepta el formato largo (una fila
-                por imagen, repitiendo la misma URL de producto). Acepta CSV (comas) o TXT (tabs). Cada URL de
-                producto distinta se convierte en un producto a evaluar; luego podrás aprobar productos de esta
-                curaduría para llevarlos directo a un pedido.
+                columnas <code>URL_Imagen_N</code> como fotos necesites). Puedes subir directamente un archivo Excel
+                (.xlsx) — no hace falta guardarlo como CSV. También acepta el formato largo (una fila por imagen,
+                repitiendo la misma URL de producto). Cada URL de producto distinta se convierte en un producto a
+                evaluar; luego podrás aprobar productos de esta curaduría para llevarlos directo a un pedido.
               </p>
               <a
-                href="/plantilla_pedidos.csv"
+                href="/plantilla_pedidos.xlsx"
                 download
                 className="inline-block text-xs text-brand-600 underline mb-2"
               >
-                📋 Descargar plantilla CSV (columnas independientes — ábrela en Excel, llénala y sube el archivo)
+                📋 Descargar plantilla Excel (.xlsx) — llénala y sube el archivo tal cual
               </a>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.txt"
+                accept=".csv,.txt,.xlsx,.xls"
                 onChange={handleImportFileChange}
                 className="text-sm mb-2"
               />

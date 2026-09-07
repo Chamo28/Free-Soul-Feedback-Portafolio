@@ -13,6 +13,7 @@ import {
   downloadPurchaseOrderCsv,
 } from "../api.js";
 import { computeOrderSummary, formatCOP, formatUSD } from "../utils/purchaseOrderCalc.js";
+import { readImportFile } from "../utils/readImportFile.js";
 
 const CATEGORIAS = ["Bolsos", "Calzado", "Ropa", "Accesorios"];
 const GENEROS = ["Mujer", "Hombre", "Infantil", "Unisex"];
@@ -160,9 +161,9 @@ export default function PurchaseOrderDetail() {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImportText(String(reader.result || ""));
-    reader.readAsText(file);
+    readImportFile(file)
+      .then((text) => setImportText(text))
+      .catch(() => setImportWarnings(["No se pudo leer el archivo. Verifica que sea un .xlsx, .csv o .txt válido."]));
   };
 
   const handleImport = async () => {
@@ -298,22 +299,23 @@ export default function PurchaseOrderDetail() {
               <b>Recomendado — una fila por producto, columnas independientes:</b>{" "}
               <code>URL_Producto, Referencia, URL_Imagen_1, URL_Imagen_2, URL_Imagen_3...</code> (agrega tantas
               columnas <code>URL_Imagen_N</code> como fotos tenga tu producto más grande; deja vacías las que no
-              apliquen). También acepta el formato largo (una fila por imagen, repitiendo la misma URL de producto).
-              Si todavía no tienes la foto de un producto, deja esas celdas vacías: igual se importa y le agregas el
-              link después en la grilla. Acepta CSV (comas) o TXT (tabs). Las fotos se muestran directo desde su URL
-              original (no se descargan ni se guardan en este servidor), para no depender de almacenamiento propio.
+              apliquen). Puedes subir directamente un archivo Excel (.xlsx) — no hace falta guardarlo como CSV.
+              También acepta el formato largo (una fila por imagen, repitiendo la misma URL de producto). Si todavía
+              no tienes la foto de un producto, deja esas celdas vacías: igual se importa y le agregas el link
+              después en la grilla. Las fotos se muestran directo desde su URL original (no se descargan ni se
+              guardan en este servidor), para no depender de almacenamiento propio.
             </p>
             <a
-              href="/plantilla_pedidos.csv"
+              href="/plantilla_pedidos.xlsx"
               download
               className="inline-block text-xs text-brand-600 underline mb-2"
             >
-              📋 Descargar plantilla CSV (columnas independientes — ábrela en Excel, llénala y sube el archivo)
+              📋 Descargar plantilla Excel (.xlsx) — llénala y sube el archivo tal cual
             </a>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".csv,.txt,.xlsx,.xls"
               onChange={handleFileChange}
               className="text-sm mb-2"
             />
