@@ -70,15 +70,15 @@ const PURCHASE_ORDERS_HEADER = [
   "Cantidad_Empaques",
   "Cantidad_Total",
   "Precio_Total_FOB_USD",
-  "Flete_Unitario_COP",
-  "Flete_Total_COP",
+  "Flete_Nacional_Unitario_COP",
+  "Flete_Nacional_Total_COP",
   "Costo_Landed_Total_COP",
   "Origen_Curaduria",
   "Peso_Ponderado_Curaduria",
   "URL_Imagen",
   "Comision_Agente_COP",
-  "Factor_Importacion_COP",
   "Costo_Reetiquetado_Total_COP",
+  "Factor_Importacion_Monto_COP",
 ];
 
 const CURATION_RANKING_HEADER = [
@@ -307,15 +307,15 @@ export function rowsFromPurchaseOrder(order, computedItems) {
     item.cantidadEmpaques || 0,
     item.cantidadTotal,
     item.precioTotalFOB_USD,
-    item.fleteUnitarioCOP,
-    item.fleteTotalCOP,
+    item.fleteNacionalUnitarioCOP || 0,
+    item.fleteNacionalTotalCOP || 0,
     item.costoLandedTotalCOP,
     item.curationMeta?.surveyName || "",
     item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
     item.photos?.[0] || "",
     item.comisionAgenteTotalCOP || 0,
-    item.factorImportacionCOP || 0,
-    item.costoReetiquetadoTotalCOP || 0,
+    item.reetiquetadoTotalCOP || 0,
+    item.factorImportacionMontoCOP || 0,
   ]);
 }
 

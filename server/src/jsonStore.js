@@ -211,7 +211,9 @@ export function deletePurchaseOrder(id) {
   return db.purchaseOrders.length < before;
 }
 
-// patch: campos de nivel de pedido (name, tasaRMBaUSD, trmUSDaCOP, categoryFreightRates).
+// patch: campos de nivel de pedido (name, tasaUSDaRMB, trmUSDaCOP,
+// comisionAgentePct, costoReetiquetadoUnitarioRMB, factorImportacionPct,
+// fleteNacionalUnitarioCOP).
 export function updatePurchaseOrder(id, patch) {
   const db = readDb();
   const order = db.purchaseOrders.find((o) => o.id === id);

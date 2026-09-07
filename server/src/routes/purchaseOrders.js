@@ -18,7 +18,7 @@ import {
   updateCurationSurveyItem,
 } from "../jsonStore.js";
 import { parseImportText } from "../services/csvParser.js";
-import { computeOrderSummary, DEFAULT_CATEGORY_FREIGHT_COP } from "../services/purchaseOrderCalc.js";
+import { computeOrderSummary } from "../services/purchaseOrderCalc.js";
 import { writePurchaseOrderSheet, rowsFromPurchaseOrder } from "../services/sheets.js";
 import { computeCurationRankings } from "../services/curationScoring.js";
 
@@ -57,12 +57,12 @@ router.post("/", requireAdmin, (req, res) => {
     id: crypto.randomUUID(),
     name: String(name).trim(),
     createdAt: new Date().toISOString(),
-    tasaRMBaUSD: 0.14,
+    tasaUSDaRMB: 7.2,
     trmUSDaCOP: 4000,
     comisionAgentePct: 0,
+    costoReetiquetadoUnitarioRMB: 0,
     factorImportacionPct: 0,
-    costoReetiquetadoUnitarioCOP: 0,
-    categoryFreightRates: { ...DEFAULT_CATEGORY_FREIGHT_COP },
+    fleteNacionalUnitarioCOP: 0,
     items: [],
   };
   addPurchaseOrder(order);
@@ -81,15 +81,14 @@ router.patch("/:id", requireAdmin, (req, res) => {
   if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
   const patch = {};
   if (typeof req.body.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
-  if (req.body.tasaRMBaUSD != null) patch.tasaRMBaUSD = Number(req.body.tasaRMBaUSD) || 0;
+  if (req.body.tasaUSDaRMB != null) patch.tasaUSDaRMB = Number(req.body.tasaUSDaRMB) || 0;
   if (req.body.trmUSDaCOP != null) patch.trmUSDaCOP = Number(req.body.trmUSDaCOP) || 0;
   if (req.body.comisionAgentePct != null) patch.comisionAgentePct = Number(req.body.comisionAgentePct) || 0;
+  if (req.body.costoReetiquetadoUnitarioRMB != null)
+    patch.costoReetiquetadoUnitarioRMB = Number(req.body.costoReetiquetadoUnitarioRMB) || 0;
   if (req.body.factorImportacionPct != null) patch.factorImportacionPct = Number(req.body.factorImportacionPct) || 0;
-  if (req.body.costoReetiquetadoUnitarioCOP != null)
-    patch.costoReetiquetadoUnitarioCOP = Number(req.body.costoReetiquetadoUnitarioCOP) || 0;
-  if (req.body.categoryFreightRates && typeof req.body.categoryFreightRates === "object") {
-    patch.categoryFreightRates = { ...order.categoryFreightRates, ...req.body.categoryFreightRates };
-  }
+  if (req.body.fleteNacionalUnitarioCOP != null)
+    patch.fleteNacionalUnitarioCOP = Number(req.body.fleteNacionalUnitarioCOP) || 0;
   const updated = updatePurchaseOrder(req.params.id, patch);
   const { items, totales } = computeOrderSummary(updated);
   res.json({ ...updated, items, totales });
@@ -145,7 +144,6 @@ router.post("/:id/import", requireAdmin, async (req, res) => {
       costoUnitarioRMB: 0,
       cantidadPorEmpaque: 0,
       cantidadEmpaques: 0,
-      fleteOverrideCOP: null,
     });
   }
 
@@ -198,7 +196,6 @@ router.post("/:id/import-from-curation", requireAdmin, async (req, res) => {
       costoUnitarioRMB: 0,
       cantidadPorEmpaque: suggestedUnits,
       cantidadEmpaques: suggestedUnits > 0 ? 1 : 0,
-      fleteOverrideCOP: null,
       curationMeta: {
         surveyId: survey.id,
         surveyName: survey.name,
@@ -239,7 +236,6 @@ router.post("/:id/items", requireAdmin, (req, res) => {
     costoUnitarioRMB: 0,
     cantidadPorEmpaque: 0,
     cantidadEmpaques: 0,
-    fleteOverrideCOP: null,
   };
   const updatedOrder = setPurchaseOrderItems(order.id, [...order.items, newItem]);
   const { items, totales } = computeOrderSummary(updatedOrder);
@@ -256,7 +252,6 @@ router.patch("/:id/items/:itemId", requireAdmin, (req, res) => {
     "costoUnitarioRMB",
     "cantidadPorEmpaque",
     "cantidadEmpaques",
-    "fleteOverrideCOP",
     "referencia",
     "productUrl",
     "photos",
@@ -319,15 +314,15 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
     "Cantidad_Empaques",
     "Cantidad_Total",
     "Precio_Total_FOB_USD",
-    "Flete_Unitario_COP",
-    "Flete_Total_COP",
+    "Flete_Nacional_Unitario_COP",
+    "Flete_Nacional_Total_COP",
     "Costo_Landed_Total_COP",
     "Origen_Curaduria",
     "Peso_Ponderado_Curaduria",
     "URL_Imagen",
     "Comision_Agente_COP",
-    "Factor_Importacion_COP",
     "Costo_Reetiquetado_Total_COP",
+    "Factor_Importacion_Monto_COP",
   ];
   const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [header.map(csvEscape).join(",")];
@@ -344,15 +339,15 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
         item.cantidadEmpaques,
         item.cantidadTotal,
         item.precioTotalFOB_USD,
-        item.fleteUnitarioCOP,
-        item.fleteTotalCOP,
+        item.fleteNacionalUnitarioCOP,
+        item.fleteNacionalTotalCOP,
         item.costoLandedTotalCOP,
         item.curationMeta?.surveyName || "",
         item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
         item.photos?.[0] || "",
         item.comisionAgenteTotalCOP,
-        item.factorImportacionCOP,
-        item.costoReetiquetadoTotalCOP,
+        item.reetiquetadoTotalCOP,
+        item.factorImportacionMontoCOP,
       ]
         .map(csvEscape)
         .join(",")

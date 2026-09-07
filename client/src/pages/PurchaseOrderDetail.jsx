@@ -129,12 +129,6 @@ export default function PurchaseOrderDetail() {
     await updatePurchaseOrder(id, patch);
   };
 
-  const patchCategoryRate = async (categoria, value) => {
-    const nextRates = { ...order.categoryFreightRates, [categoria]: Number(value) || 0 };
-    setOrder((prev) => ({ ...prev, categoryFreightRates: nextRates }));
-    await updatePurchaseOrder(id, { categoryFreightRates: nextRates });
-  };
-
   const patchItemLocal = (itemId, patch) => {
     setOrder((prev) => ({
       ...prev,
@@ -234,9 +228,9 @@ export default function PurchaseOrderDetail() {
           {ratesOpen && (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
               <RateInput
-                label="TRM Yuan → Dólar"
-                value={order.tasaRMBaUSD}
-                onCommit={(v) => patchOrderField({ tasaRMBaUSD: Number(v) || 0 })}
+                label="TRM Dólar → Yuan"
+                value={order.tasaUSDaRMB}
+                onCommit={(v) => patchOrderField({ tasaUSDaRMB: Number(v) || 0 })}
               />
               <RateInput
                 label="TRM Dólar → Peso"
@@ -249,24 +243,20 @@ export default function PurchaseOrderDetail() {
                 onCommit={(v) => patchOrderField({ comisionAgentePct: Number(v) || 0 })}
               />
               <RateInput
-                label="% Factor de importación"
+                label="Costo reetiquetado (RMB/unidad)"
+                value={order.costoReetiquetadoUnitarioRMB ?? 0}
+                onCommit={(v) => patchOrderField({ costoReetiquetadoUnitarioRMB: Number(v) || 0 })}
+              />
+              <RateInput
+                label="Flete nacional (COP/unidad)"
+                value={order.fleteNacionalUnitarioCOP ?? 0}
+                onCommit={(v) => patchOrderField({ fleteNacionalUnitarioCOP: Number(v) || 0 })}
+              />
+              <RateInput
+                label="% Factor de importación (incluye fletes)"
                 value={order.factorImportacionPct ?? 0}
                 onCommit={(v) => patchOrderField({ factorImportacionPct: Number(v) || 0 })}
               />
-              <RateInput
-                label="Costo reetiquetado (COP/unidad)"
-                value={order.costoReetiquetadoUnitarioCOP ?? 0}
-                onCommit={(v) => patchOrderField({ costoReetiquetadoUnitarioCOP: Number(v) || 0 })}
-              />
-              <div />
-              {CATEGORIAS.map((cat) => (
-                <RateInput
-                  key={cat}
-                  label={`Flete ${cat} (COP/unidad)`}
-                  value={order.categoryFreightRates?.[cat] ?? 0}
-                  onCommit={(v) => patchCategoryRate(cat, v)}
-                />
-              ))}
             </div>
           )}
         </div>
@@ -306,10 +296,18 @@ export default function PurchaseOrderDetail() {
             <p className="text-sm font-medium text-slate-700 mb-1">Importar productos</p>
             <p className="text-xs text-slate-500 mb-2">
               Columnas: <code>URL_Producto, URL_Imagen, Referencia</code> — una fila por imagen; si un producto tiene
-              varias fotos, repite la misma URL de producto en varias filas. Acepta CSV (comas) o TXT (tabs), con o
-              sin encabezado. Las fotos se muestran directo desde su URL original (no se descargan ni se guardan en
-              este servidor), para no depender de almacenamiento propio.
+              varias fotos, repite la misma URL de producto en varias filas. Si todavía no tienes la foto de un
+              producto, deja esa celda vacía: igual se importa y le agregas el link después en la grilla. Acepta CSV
+              (comas) o TXT (tabs), con o sin encabezado. Las fotos se muestran directo desde su URL original (no se
+              descargan ni se guardan en este servidor), para no depender de almacenamiento propio.
             </p>
+            <a
+              href="/plantilla_pedidos.csv"
+              download
+              className="inline-block text-xs text-brand-600 underline mb-2"
+            >
+              📋 Descargar plantilla CSV (ábrela en Excel, llénala y sube el archivo)
+            </a>
             <input
               ref={fileInputRef}
               type="file"

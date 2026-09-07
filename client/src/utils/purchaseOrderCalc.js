@@ -2,61 +2,49 @@
 // duplican aquí para que la grilla calcule en vivo mientras el admin digita,
 // sin esperar la respuesta del servidor en cada tecla.
 //
-// Cadena de costeo hasta el Costo Landed: Costo RMB + % comisión agente de
-// compra → USD (tasa RMB→USD) → Precio FOB → COP (TRM) + % factor de
-// importación + Flete (por categoría o excepción) + Costo de reetiquetado.
-
-export const DEFAULT_CATEGORY_FREIGHT_COP = {
-  Bolsos: 8000,
-  Calzado: 9000,
-  Ropa: 6000,
-  Accesorios: 4000,
-};
-
-export function freightPerUnitCOP(item, order) {
-  if (item.fleteOverrideCOP != null && item.fleteOverrideCOP !== "") {
-    return Number(item.fleteOverrideCOP) || 0;
-  }
-  const rates = order.categoryFreightRates || {};
-  return Number(rates[item.categoria]) || 0;
-}
+// Cadena de costeo: Costo RMB + % comisión agente + Costo reetiquetado
+// (RMB/unidad) → ÷ TRM Dólar→Yuan → FOB (USD) → × TRM Dólar→Peso → + Flete
+// Nacional (COP/unidad) → × (1 + % Factor de importación, que ya incluye
+// todos los fletes internacionales/aranceles) = Costo Landed.
 
 export function computeItem(item, order) {
   const costoUnitarioRMB = Number(item.costoUnitarioRMB) || 0;
   const cantidadPorEmpaque = Number(item.cantidadPorEmpaque) || 0;
   const cantidadEmpaques = Number(item.cantidadEmpaques) || 0;
-  const tasaRMBaUSD = Number(order.tasaRMBaUSD) || 0;
+  const tasaUSDaRMB = Number(order.tasaUSDaRMB) || 0;
   const trmUSDaCOP = Number(order.trmUSDaCOP) || 0;
   const comisionAgentePct = Number(order.comisionAgentePct) || 0;
+  const costoReetiquetadoUnitarioRMB = Number(order.costoReetiquetadoUnitarioRMB) || 0;
   const factorImportacionPct = Number(order.factorImportacionPct) || 0;
-  const costoReetiquetadoUnitarioCOP = Number(order.costoReetiquetadoUnitarioCOP) || 0;
+  const fleteNacionalUnitarioCOP = Number(order.fleteNacionalUnitarioCOP) || 0;
 
   const cantidadTotal = cantidadPorEmpaque * cantidadEmpaques;
 
   const costoUnitarioConComisionRMB = costoUnitarioRMB * (1 + comisionAgentePct / 100);
-  const costoUnitarioUSD = costoUnitarioConComisionRMB * tasaRMBaUSD;
+  const costoUnitarioTotalRMB = costoUnitarioConComisionRMB + costoReetiquetadoUnitarioRMB;
+  const costoUnitarioUSD = tasaUSDaRMB > 0 ? costoUnitarioTotalRMB / tasaUSDaRMB : 0;
   const precioTotalFOB_USD = costoUnitarioUSD * cantidadTotal;
-  const comisionAgenteTotalCOP = (costoUnitarioConComisionRMB - costoUnitarioRMB) * tasaRMBaUSD * cantidadTotal * trmUSDaCOP;
+
+  const comisionAgenteTotalCOP =
+    tasaUSDaRMB > 0 ? ((costoUnitarioConComisionRMB - costoUnitarioRMB) / tasaUSDaRMB) * cantidadTotal * trmUSDaCOP : 0;
+  const reetiquetadoTotalCOP =
+    tasaUSDaRMB > 0 ? (costoReetiquetadoUnitarioRMB / tasaUSDaRMB) * cantidadTotal * trmUSDaCOP : 0;
 
   const fobTotalCOP = precioTotalFOB_USD * trmUSDaCOP;
-  const factorImportacionCOP = fobTotalCOP * (factorImportacionPct / 100);
-
-  const fleteUnitarioCOP = freightPerUnitCOP(item, order);
-  const fleteTotalCOP = fleteUnitarioCOP * cantidadTotal;
-
-  const costoReetiquetadoTotalCOP = costoReetiquetadoUnitarioCOP * cantidadTotal;
-
-  const costoLandedTotalCOP = fobTotalCOP + factorImportacionCOP + fleteTotalCOP + costoReetiquetadoTotalCOP;
+  const fleteNacionalTotalCOP = fleteNacionalUnitarioCOP * cantidadTotal;
+  const subtotalCOP = fobTotalCOP + fleteNacionalTotalCOP;
+  const factorImportacionMontoCOP = subtotalCOP * (factorImportacionPct / 100);
+  const costoLandedTotalCOP = subtotalCOP + factorImportacionMontoCOP;
 
   return {
     cantidadTotal,
     costoUnitarioUSD: round2(costoUnitarioUSD),
     precioTotalFOB_USD: round2(precioTotalFOB_USD),
     comisionAgenteTotalCOP: Math.round(comisionAgenteTotalCOP),
-    fleteUnitarioCOP,
-    fleteTotalCOP: Math.round(fleteTotalCOP),
-    factorImportacionCOP: Math.round(factorImportacionCOP),
-    costoReetiquetadoTotalCOP: Math.round(costoReetiquetadoTotalCOP),
+    reetiquetadoTotalCOP: Math.round(reetiquetadoTotalCOP),
+    fleteNacionalUnitarioCOP,
+    fleteNacionalTotalCOP: Math.round(fleteNacionalTotalCOP),
+    factorImportacionMontoCOP: Math.round(factorImportacionMontoCOP),
     costoLandedTotalCOP: Math.round(costoLandedTotalCOP),
   };
 }
