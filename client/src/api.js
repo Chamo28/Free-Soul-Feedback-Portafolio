@@ -97,6 +97,16 @@ export async function getRankings() {
   return data.map(withResolvedRankingRow);
 }
 
+export async function getResponses(productId) {
+  const { data } = await api.get("/responses", { params: { productId } });
+  return data;
+}
+
+export async function deleteResponse(id) {
+  const { data } = await api.delete(`/responses/${id}`);
+  return data;
+}
+
 export async function getSyncStatus() {
   const { data } = await api.get("/sync/status");
   return data;
@@ -148,6 +158,16 @@ export async function getCurationRankings(surveyId) {
     ranking: (data.ranking || []).map(withResolvedRankingRow),
     favoritoTop1: withResolvedRankingRow(data.favoritoTop1),
   };
+}
+
+export async function getCurationResponses(surveyId) {
+  const { data } = await api.get("/curation/responses", { params: { surveyId } });
+  return data;
+}
+
+export async function deleteCurationResponse(id) {
+  const { data } = await api.delete(`/curation/responses/${id}`);
+  return data;
 }
 
 export default api;

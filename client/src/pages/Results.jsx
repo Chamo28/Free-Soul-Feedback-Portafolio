@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
 import ZoomModal from "../components/ZoomModal.jsx";
-import { getRankings, getSyncStatus, triggerSync, getCurationSurveys, getCurationRankings } from "../api.js";
+import {
+  getRankings,
+  getSyncStatus,
+  triggerSync,
+  getCurationSurveys,
+  getCurationRankings,
+  getCurationResponses,
+  deleteCurationResponse,
+} from "../api.js";
 
 const badgeClass = {
   Adelante: "bg-green-100 text-green-700",
@@ -205,15 +213,50 @@ function DetailedResults() {
   );
 }
 
+function fechaCorta(iso) {
+  try {
+    return new Date(iso).toLocaleString("es-CO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+function SurveyPickerCard({ survey, selected, onSelect }) {
+  return (
+    <button
+      onClick={onSelect}
+      className={`text-left bg-white rounded-xl overflow-hidden flex-shrink-0 w-48 border-2 transition-colors ${
+        selected ? "border-brand-600 shadow-md" : "border-transparent hover:border-slate-200"
+      }`}
+    >
+      <div className="grid grid-cols-6 gap-px bg-slate-100 h-12">
+        {survey.items.slice(0, 6).map((item) => (
+          <img key={item.id} src={item.photo} alt="" className="w-full h-full object-cover" />
+        ))}
+      </div>
+      <div className="p-2">
+        <p className="text-sm font-semibold text-slate-800 truncate">{survey.name}</p>
+        <p className="text-xs text-slate-500 truncate">
+          {survey.category} · {survey.items.length} productos
+        </p>
+      </div>
+    </button>
+  );
+}
+
 function CurationResults({ initialSurveyId }) {
   const [surveys, setSurveys] = useState([]);
   const [selectedId, setSelectedId] = useState(initialSurveyId || "");
   const [ranking, setRanking] = useState(null);
+  const [responses, setResponses] = useState([]);
+  const [selectedResponseId, setSelectedResponseId] = useState(""); // "" = ranking agregado ("Todos")
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [zoomItem, setZoomItem] = useState(null);
   const selectedSurvey = surveys.find((s) => s.id === selectedId);
+  const selectedResponse = responses.find((r) => r.id === selectedResponseId);
 
   useEffect(() => {
     Promise.all([getCurationSurveys(), getSyncStatus()]).then(([list, s]) => {
@@ -225,10 +268,17 @@ function CurationResults({ initialSurveyId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadSurveyData = (surveyId) => {
+    setRanking(null);
+    setSelectedResponseId("");
+    getCurationRankings(surveyId).then(setRanking);
+    getCurationResponses(surveyId).then(setResponses);
+  };
+
   useEffect(() => {
     if (!selectedId) return;
-    setRanking(null);
-    getCurationRankings(selectedId).then(setRanking);
+    loadSurveyData(selectedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const handleSync = async () => {
@@ -240,6 +290,19 @@ function CurationResults({ initialSurveyId }) {
       if (selectedId) setRanking(await getCurationRankings(selectedId));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleDeleteResponse = async (response) => {
+    if (!confirm(`¿Eliminar la respuesta de "${response.evaluador}"? También se borra su fila en Google Sheets si ya estaba sincronizada.`))
+      return;
+    setDeleting(true);
+    try {
+      await deleteCurationResponse(response.id);
+      setSelectedResponseId("");
+      loadSurveyData(selectedId);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -255,22 +318,29 @@ function CurationResults({ initialSurveyId }) {
 
   return (
     <div>
-      {/* Solo visible al imprimir/exportar: el <select> de abajo no imprime su valor. */}
+      {/* Solo visible al imprimir/exportar: los controles interactivos no imprimen su valor. */}
       {selectedSurvey && (
         <h1 className="hidden print:block text-lg font-bold text-slate-800 mb-4">
           {selectedSurvey.name} · {selectedSurvey.category}
         </h1>
       )}
 
+      <div className="flex gap-3 overflow-x-auto pb-1 mb-4 print:hidden">
+        {surveys.map((s) => (
+          <SurveyPickerCard key={s.id} survey={s} selected={s.id === selectedId} onSelect={() => setSelectedId(s.id)} />
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 print:hidden">
         <select
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium"
+          value={selectedResponseId}
+          onChange={(e) => setSelectedResponseId(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium max-w-[240px]"
         >
-          {surveys.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} · {s.category}
+          <option value="">Todos los evaluadores (ranking)</option>
+          {responses.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.evaluador} · {fechaCorta(r.fecha)}
             </option>
           ))}
         </select>
@@ -293,80 +363,145 @@ function CurationResults({ initialSurveyId }) {
           >
             {syncing ? "Sincronizando..." : "Sincronizar con Sheets"}
           </button>
-          <button
-            onClick={() => window.print()}
-            className="text-sm bg-brand-600 text-white rounded-lg px-3 py-1.5"
-          >
+          <button onClick={() => window.print()} className="text-sm bg-brand-600 text-white rounded-lg px-3 py-1.5">
             🖨️ Exportar / Imprimir
           </button>
         </div>
       </div>
 
-      {!ranking && <p className="text-slate-500">Cargando ranking...</p>}
-
-      {ranking && (
+      {selectedResponse ? (
+        <IndividualSelection
+          response={selectedResponse}
+          survey={selectedSurvey}
+          onZoom={setZoomItem}
+          onDelete={() => handleDeleteResponse(selectedResponse)}
+          deleting={deleting}
+        />
+      ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-            <Stat label="Evaluadores" value={ranking.totalEvaluadores} />
-            <Stat label="Productos" value={ranking.ranking.length} />
-            <div className="bg-amber-50 rounded-lg py-2 text-center col-span-2 sm:col-span-1">
-              <p className="text-sm font-bold text-amber-700 truncate px-1">
-                {ranking.favoritoTop1 ? ranking.favoritoTop1.name : "—"}
-              </p>
-              <p className="text-xs text-amber-600">★ Favorito #1 más elegido</p>
-            </div>
-          </div>
+          {!ranking && <p className="text-slate-500">Cargando ranking...</p>}
 
-          {ranking.totalEvaluadores === 0 && (
-            <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500 mb-4">
-              Todavía no hay respuestas de evaluadores para esta curaduría.
-            </div>
-          )}
-
-          {ranking.totalEvaluadores > 0 && (
-            <p className="text-xs text-slate-500 mb-3">
-              Ordenado por <b>peso ponderado</b>: no es solo cuántos lo eligieron, sino en qué puesto (el evaluador
-              hace clic primero en su favorito absoluto). Úsalo para priorizar volumen de compra — un producto con
-              mayor % de peso merece más unidades que uno con la misma tasa de selección pero elegido de último.
-            </p>
-          )}
-
-          <div className="space-y-2">
-            {ranking.ranking.map((row, i) => (
-              <div
-                key={row.productId}
-                className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3"
-              >
-                <span className="text-sm font-bold text-slate-400 w-6 text-center">{i + 1}</span>
-                <img
-                  src={row.photo}
-                  alt={row.name}
-                  onClick={() => setZoomItem({ photo: row.photo, name: row.name })}
-                  className="w-20 h-20 print:w-40 print:h-40 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-80"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-800 truncate">
-                    {row.name} {row.vecesFavorito > 0 && <span className="text-amber-500">★{row.vecesFavorito}</span>}
+          {ranking && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+                <Stat label="Evaluadores" value={ranking.totalEvaluadores} />
+                <Stat label="Productos" value={ranking.ranking.length} />
+                <div className="bg-amber-50 rounded-lg py-2 text-center col-span-2 sm:col-span-1">
+                  <p className="text-sm font-bold text-amber-700 truncate px-1">
+                    {ranking.favoritoTop1 ? ranking.favoritoTop1.name : "—"}
                   </p>
-                  <p className="text-xs text-slate-500">
-                    {row.votos} voto(s) · {row.pctSeleccion}% tasa de selección
-                    {row.posicionPromedio != null && <> · puesto promedio #{row.posicionPromedio}</>}
-                  </p>
+                  <p className="text-xs text-amber-600">★ Favorito #1 más elegido</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-brand-700 text-sm">{row.pctPonderado}%</p>
-                  <p className="text-[10px] text-slate-400 -mt-0.5">peso</p>
-                </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${curationBadgeClass[row.label]}`}>
-                  {row.label}
-                </span>
               </div>
-            ))}
-          </div>
+
+              {ranking.totalEvaluadores === 0 && (
+                <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500 mb-4">
+                  Todavía no hay respuestas de evaluadores para esta curaduría.
+                </div>
+              )}
+
+              {ranking.totalEvaluadores > 0 && (
+                <p className="text-xs text-slate-500 mb-3">
+                  Ordenado por <b>peso ponderado</b>: no es solo cuántos lo eligieron, sino en qué puesto (el
+                  evaluador hace clic primero en su favorito absoluto). Úsalo para priorizar volumen de compra — un
+                  producto con mayor % de peso merece más unidades que uno con la misma tasa de selección pero
+                  elegido de último.
+                </p>
+              )}
+
+              <div className="space-y-2">
+                {ranking.ranking.map((row, i) => (
+                  <div
+                    key={row.productId}
+                    className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3"
+                  >
+                    <span className="text-sm font-bold text-slate-400 w-6 text-center">{i + 1}</span>
+                    <img
+                      src={row.photo}
+                      alt={row.name}
+                      onClick={() => setZoomItem({ photo: row.photo, name: row.name })}
+                      className="w-20 h-20 print:w-40 print:h-40 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-80"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">
+                        {row.name}{" "}
+                        {row.vecesFavorito > 0 && <span className="text-amber-500">★{row.vecesFavorito}</span>}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {row.votos} voto(s) · {row.pctSeleccion}% tasa de selección
+                        {row.posicionPromedio != null && <> · puesto promedio #{row.posicionPromedio}</>}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-brand-700 text-sm">{row.pctPonderado}%</p>
+                      <p className="text-[10px] text-slate-400 -mt-0.5">peso</p>
+                    </div>
+                    <span
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${curationBadgeClass[row.label]}`}
+                    >
+                      {row.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
 
       <ZoomModal photo={zoomItem?.photo} name={zoomItem?.name} onClose={() => setZoomItem(null)} />
+    </div>
+  );
+}
+
+function IndividualSelection({ response, survey, onZoom, onDelete, deleting }) {
+  const items = response.selectedProductIds
+    .map((id) => survey?.items.find((i) => i.id === id))
+    .filter(Boolean);
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <p className="font-semibold text-slate-800">Selección de {response.evaluador}</p>
+          <p className="text-xs text-slate-500">{fechaCorta(response.fecha)}</p>
+        </div>
+        <button
+          onClick={onDelete}
+          disabled={deleting}
+          className="text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5 disabled:opacity-60 print:hidden"
+        >
+          {deleting ? "Eliminando..." : "🗑️ Eliminar esta respuesta"}
+        </button>
+      </div>
+
+      <ol className="space-y-2 mb-4">
+        {items.map((item, i) => (
+          <li key={item.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-2">
+            <span
+              className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${
+                i === 0 ? "bg-amber-500 text-white" : "bg-brand-50 text-brand-700"
+              }`}
+            >
+              {i === 0 ? "★" : `#${i + 1}`}
+            </span>
+            <img
+              src={item.photo}
+              alt={item.name}
+              onClick={() => onZoom({ photo: item.photo, name: item.name })}
+              className="w-16 h-16 print:w-32 print:h-32 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-80"
+            />
+            <span className="font-medium text-slate-800 truncate">{item.name}</span>
+          </li>
+        ))}
+      </ol>
+
+      {response.comentarios && (
+        <div className="bg-slate-50 rounded-lg p-3 text-sm">
+          <span className="font-medium text-slate-700">Comentarios: </span>
+          <span className="text-slate-600">{response.comentarios}</span>
+        </div>
+      )}
     </div>
   );
 }

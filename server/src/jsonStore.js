@@ -92,6 +92,18 @@ export function markResponseSynced(id, synced = true) {
   }
 }
 
+export function getResponseById(id) {
+  return readDb().responses.find((r) => r.id === id) || null;
+}
+
+export function deleteResponse(id) {
+  const db = readDb();
+  const before = db.responses.length;
+  db.responses = db.responses.filter((r) => r.id !== id);
+  writeDb(db);
+  return db.responses.length < before;
+}
+
 // --- Curation surveys (Curaduría de Portafolio / Top-K) ---
 export function getCurationSurveys() {
   return readDb().curationSurveys;
@@ -148,4 +160,16 @@ export function markCurationResponseSynced(id, synced = true) {
     r.synced = synced;
     writeDb(db);
   }
+}
+
+export function getCurationResponseById(id) {
+  return readDb().curationResponses.find((r) => r.id === id) || null;
+}
+
+export function deleteCurationResponse(id) {
+  const db = readDb();
+  const before = db.curationResponses.length;
+  db.curationResponses = db.curationResponses.filter((r) => r.id !== id);
+  writeDb(db);
+  return db.curationResponses.length < before;
 }

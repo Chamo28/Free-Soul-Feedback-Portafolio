@@ -14,6 +14,8 @@ import {
   deleteCurationSurvey,
   addCurationResponse,
   getCurationResponses,
+  getCurationResponseById,
+  deleteCurationResponse,
   getUnsyncedCurationResponses,
   markCurationResponseSynced,
 } from "../jsonStore.js";
@@ -21,6 +23,7 @@ import {
   appendCurationResponseRow,
   rowFromCurationResponse,
   writeCurationRankingSheet,
+  deleteCurationResponseRow,
 } from "../services/sheets.js";
 import { computeCurationRankings } from "../services/curationScoring.js";
 
@@ -211,6 +214,25 @@ router.get("/responses", requireAdmin, (req, res) => {
   let list = getCurationResponses();
   if (surveyId) list = list.filter((r) => r.surveyId === surveyId);
   res.json(list);
+});
+
+// Borra la respuesta de UN evaluador puntual: de la base local y, si ya se
+// había sincronizado, también su fila exacta en Curaduria_Respuestas (nunca
+// toca las demás filas). Deja el ranking (local y en Sheets) al día.
+router.delete("/responses/:id", requireAdmin, async (req, res) => {
+  const response = getCurationResponseById(req.params.id);
+  if (!response) return res.status(404).json({ error: "Respuesta no encontrada." });
+
+  const survey = getCurationSurveyById(response.surveyId);
+  deleteCurationResponse(req.params.id);
+
+  let sheetResult = { ok: true, foundInSheet: false };
+  if (response.synced) {
+    sheetResult = await deleteCurationResponseRow(response.id);
+  }
+  if (survey) await syncRankingSheet(survey);
+
+  res.json({ ok: true, borradoDeSheets: sheetResult.foundInSheet });
 });
 
 router.get("/rankings/:surveyId", requireAdmin, (req, res) => {

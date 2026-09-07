@@ -26,6 +26,10 @@ function loadCredentialsObject() {
 const CURATION_RESPONSES_TAB = "Curaduria_Respuestas";
 const CURATION_RANKING_TAB = "Curaduria_Ranking";
 
+// La última columna (Respuesta_ID) no es parte del pedido original de negocio,
+// es interna: nos permite ubicar y borrar la fila exacta de un evaluador
+// desde el panel admin sin arriesgar otras filas (buscar por nombre/fecha es
+// frágil si dos evaluadores comparten nombre o coinciden de milagro en hora).
 const HEADER_ROW = [
   "Evaluador",
   "Fecha",
@@ -37,6 +41,7 @@ const HEADER_ROW = [
   "Compraria",
   "Comentarios",
   "Encuesta_ID",
+  "Respuesta_ID",
 ];
 
 const CURATION_RESPONSES_HEADER = [
@@ -47,6 +52,7 @@ const CURATION_RESPONSES_HEADER = [
   "Productos_Seleccionados",
   "Favorito_Top1",
   "Comentarios",
+  "Respuesta_ID",
 ];
 
 const CURATION_RANKING_HEADER = [
@@ -87,6 +93,17 @@ async function ensureTabExists(client, tab) {
   tabsKnownToExist.add(tab);
 }
 
+// Devuelve el sheetId (numérico, interno) de una pestaña por su nombre —
+// lo pide cualquier operación de fila/columna (deleteDimension, etc).
+async function getTabSheetId(client, tab) {
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: "sheets.properties",
+  });
+  const found = (meta.data.sheets || []).find((s) => s.properties.title === tab);
+  return found ? found.properties.sheetId : null;
+}
+
 function isConfigured() {
   if (!SHEET_ID) return false;
   if (CREDENTIALS_BASE64) return true;
@@ -119,13 +136,16 @@ async function getClient() {
 async function ensureHeaderFor(client, tab, headerRow) {
   if (headerEnsuredTabs.has(tab)) return;
   try {
-    const lastCol = String.fromCharCode(64 + headerRow.length); // A, B, C... J
+    const lastCol = colLetter(headerRow.length);
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${tab}!A1:${lastCol}1`,
     });
-    const hasHeader = res.data.values && res.data.values.length > 0;
-    if (!hasHeader) {
+    const currentHeader = res.data.values?.[0] || [];
+    // Si la pestaña ya existía de una versión anterior (sin la columna
+    // Respuesta_ID, por ejemplo), se extiende el encabezado en vez de dejarlo
+    // corto para siempre.
+    if (currentHeader.length < headerRow.length) {
       await client.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: `${tab}!A1:${lastCol}1`,
@@ -138,6 +158,10 @@ async function ensureHeaderFor(client, tab, headerRow) {
     // Si la pestaña no existe u otro error, seguimos igual: el append/update la puede crear.
     headerEnsuredTabs.add(tab);
   }
+}
+
+function colLetter(n) {
+  return String.fromCharCode(64 + n); // 1->A, 2->B, ... funciona hasta 26 columnas
 }
 
 export function getStatus() {
@@ -165,11 +189,16 @@ export function rowFromResponse(r, product) {
     r.compraria ? "Sí" : "No",
     r.comentarios || "",
     r.productId,
+    r.id,
   ];
 }
 
 export async function appendRow(row) {
   return appendRowToTab(SHEET_TAB, HEADER_ROW, row);
+}
+
+export async function deleteResponseRow(responseId) {
+  return deleteRowByIdColumn(SHEET_TAB, HEADER_ROW.length - 1, responseId);
 }
 
 // --- Curaduría de Portafolio (Top-K) ---
@@ -179,11 +208,24 @@ export function rowFromCurationResponse(r, survey) {
     .map((id) => survey?.items.find((i) => i.id === id)?.name || id)
     .join(", ");
   const favoriteName = survey?.items.find((i) => i.id === r.favoriteId)?.name || r.favoriteId || "";
-  return [r.evaluador || "Anónimo", r.fecha, r.surveyId, survey?.category || "", names, favoriteName, r.comentarios || ""];
+  return [
+    r.evaluador || "Anónimo",
+    r.fecha,
+    r.surveyId,
+    survey?.category || "",
+    names,
+    favoriteName,
+    r.comentarios || "",
+    r.id,
+  ];
 }
 
 export async function appendCurationResponseRow(row) {
   return appendRowToTab(CURATION_RESPONSES_TAB, CURATION_RESPONSES_HEADER, row);
+}
+
+export async function deleteCurationResponseRow(responseId) {
+  return deleteRowByIdColumn(CURATION_RESPONSES_TAB, CURATION_RESPONSES_HEADER.length - 1, responseId);
 }
 
 // Reescribe por completo la pestaña de ranking agregado de una curaduría
@@ -195,7 +237,7 @@ export async function writeCurationRankingSheet(surveyId, rows) {
     await ensureTabExists(client, CURATION_RANKING_TAB);
     await ensureHeaderFor(client, CURATION_RANKING_TAB, CURATION_RANKING_HEADER);
     // Traer todo lo existente para conservar filas de otras encuestas de curaduría.
-    const lastCol = String.fromCharCode(64 + CURATION_RANKING_HEADER.length);
+    const lastCol = colLetter(CURATION_RANKING_HEADER.length);
     const res = await client.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: `${CURATION_RANKING_TAB}!A2:${lastCol}100000`,
@@ -222,7 +264,7 @@ export async function writeCurationRankingSheet(surveyId, rows) {
   }
 }
 
-// --- Helper genérico ---
+// --- Helpers genéricos ---
 
 async function appendRowToTab(tab, headerRow, row) {
   const client = await getClient();
@@ -230,7 +272,7 @@ async function appendRowToTab(tab, headerRow, row) {
   try {
     await ensureTabExists(client, tab);
     await ensureHeaderFor(client, tab, headerRow);
-    const lastCol = String.fromCharCode(64 + headerRow.length);
+    const lastCol = colLetter(headerRow.length);
     await client.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: `${tab}!A:${lastCol}`,
@@ -241,5 +283,40 @@ async function appendRowToTab(tab, headerRow, row) {
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+}
+
+// Busca la fila cuya columna (0-based) idColIndex sea exactamente idValue y
+// la borra. No falla si no la encuentra (puede que nunca haya llegado a
+// sincronizarse, o Sheets no esté configurado) — en ese caso no hay nada que
+// borrar ahí y el borrado local ya es suficiente.
+async function deleteRowByIdColumn(tab, idColIndex, idValue) {
+  const client = await getClient();
+  if (!client) return { ok: false, error: initError, foundInSheet: false };
+  try {
+    const idCol = colLetter(idColIndex + 1);
+    const res = await client.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${tab}!${idCol}2:${idCol}100000`,
+    });
+    const values = res.data.values || [];
+    const rowOffset = values.findIndex((row) => row[0] === idValue);
+    if (rowOffset === -1) {
+      return { ok: true, foundInSheet: false };
+    }
+    const sheetId = await getTabSheetId(client, tab);
+    if (sheetId === null) return { ok: true, foundInSheet: false };
+    // +1 porque el rango empezó en la fila 2 (índice 1, 0-based), +1 porque
+    // deleteDimension usa índices 0-based de fila (fila 2 real = índice 1).
+    const rowIndex = rowOffset + 1;
+    await client.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 } } }],
+      },
+    });
+    return { ok: true, foundInSheet: true };
+  } catch (err) {
+    return { ok: false, error: err.message, foundInSheet: false };
   }
 }

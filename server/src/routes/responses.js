@@ -1,8 +1,16 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { requireAdmin } from "../middleware/auth.js";
-import { addResponse, getResponses, getProductById, getProducts, markResponseSynced } from "../jsonStore.js";
-import { appendRow, rowFromResponse } from "../services/sheets.js";
+import {
+  addResponse,
+  getResponses,
+  getResponseById,
+  deleteResponse,
+  getProductById,
+  getProducts,
+  markResponseSynced,
+} from "../jsonStore.js";
+import { appendRow, rowFromResponse, deleteResponseRow } from "../services/sheets.js";
 import { summarizeResponses } from "../services/scoring.js";
 
 const router = Router();
@@ -72,6 +80,22 @@ router.get("/", requireAdmin, (req, res) => {
   let list = getResponses();
   if (productId) list = list.filter((r) => r.productId === productId);
   res.json(list);
+});
+
+// Borra la respuesta de UN evaluador puntual: de la base local y, si ya se
+// había sincronizado, también su fila exacta en la hoja (nunca toca las demás).
+router.delete("/:id", requireAdmin, async (req, res) => {
+  const response = getResponseById(req.params.id);
+  if (!response) return res.status(404).json({ error: "Respuesta no encontrada." });
+
+  deleteResponse(req.params.id);
+
+  let sheetResult = { ok: true, foundInSheet: false };
+  if (response.synced) {
+    sheetResult = await deleteResponseRow(response.id);
+  }
+
+  res.json({ ok: true, borradoDeSheets: sheetResult.foundInSheet });
 });
 
 router.get("/rankings", requireAdmin, (_req, res) => {
