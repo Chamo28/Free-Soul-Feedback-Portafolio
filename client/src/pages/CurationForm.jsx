@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getCategories, createCurationSurvey } from "../api.js";
+import { getCategories, createCurationSurvey, createCurationSurveyFromLinks } from "../api.js";
 import { compressImageFiles } from "../utils/compressImage.js";
 import Navbar from "../components/Navbar.jsx";
 
 export default function CurationForm() {
+  const [sourceMode, setSourceMode] = useState("upload"); // "upload" (fotos manuales) | "links" (CSV/TXT como Pedidos)
   const [categories, setCategories] = useState([]);
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -15,9 +16,12 @@ export default function CurationForm() {
   const [files, setFiles] = useState([]);
   const [compressing, setCompressing] = useState(false);
   const [itemNames, setItemNames] = useState([]);
+  const [importText, setImportText] = useState("");
+  const [importWarnings, setImportWarnings] = useState([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createdLink, setCreatedLink] = useState(null);
+  const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,21 +47,56 @@ export default function CurationForm() {
     setItemNames((prev) => prev.map((n, idx) => (idx === i ? value : n)));
   };
 
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setImportText(String(reader.result || ""));
+    reader.readAsText(file);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setImportWarnings([]);
     const finalCategory = category === "__custom__" ? customCategory.trim() : category;
     if (!name.trim() || !finalCategory) {
       setError("Completa el nombre de la dinámica y la categoría.");
       return;
     }
-    if (files.length < 2) {
-      setError("Sube al menos 2 productos (ideal 15).");
-      return;
-    }
     const count = Number(selectionCount);
     if (!Number.isInteger(count) || count < 1) {
       setError("La cantidad a seleccionar debe ser un número entero mayor a 0.");
+      return;
+    }
+
+    if (sourceMode === "links") {
+      if (!importText.trim()) {
+        setError("Pega o sube el CSV/TXT con los links de producto y foto.");
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const survey = await createCurationSurveyFromLinks({
+          name: name.trim(),
+          category: finalCategory,
+          instructions: instructions.trim(),
+          selectionMode,
+          selectionCount: count,
+          text: importText,
+        });
+        setImportWarnings(survey.importWarnings || []);
+        setCreatedLink(`${window.location.origin}/curacion/${survey.id}`);
+      } catch (err) {
+        setError(err.response?.data?.error || "Error creando la curaduría desde links.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (files.length < 2) {
+      setError("Sube al menos 2 productos (ideal 15).");
       return;
     }
     if (selectionMode === "exact" && count > files.length) {
@@ -95,6 +134,16 @@ export default function CurationForm() {
           <div className="bg-white border border-slate-200 rounded-lg p-3 text-sm break-all mb-4">
             {createdLink}
           </div>
+          {importWarnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 text-left mb-4">
+              <p className="font-medium mb-1">Avisos de la importación:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {importWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => navigator.clipboard.writeText(createdLink)}
@@ -122,6 +171,27 @@ export default function CurationForm() {
         <p className="text-sm text-slate-500 mb-4">
           Selección Top-K: el evaluador elige sus N favoritos de todo el conjunto que subas.
         </p>
+
+        <div className="flex gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setSourceMode("upload")}
+            className={`text-sm rounded-lg px-3 py-1.5 border ${
+              sourceMode === "upload" ? "bg-brand-600 text-white border-brand-600" : "border-slate-300 text-slate-600"
+            }`}
+          >
+            📸 Subir fotos manualmente
+          </button>
+          <button
+            type="button"
+            onClick={() => setSourceMode("links")}
+            className={`text-sm rounded-lg px-3 py-1.5 border ${
+              sourceMode === "links" ? "bg-brand-600 text-white border-brand-600" : "border-slate-300 text-slate-600"
+            }`}
+          >
+            🔗 Importar por links (CSV/TXT)
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
           <div>
@@ -199,31 +269,59 @@ export default function CurationForm() {
             Por defecto: 10 de 15. El evaluador deberá elegir {selectionCount || "X"} producto(s) para poder enviar.
           </p>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Fotos del portafolio (ideal 15)</label>
-            <input type="file" accept="image/*" multiple onChange={handleFiles} className="w-full text-sm" />
-            {compressing && <p className="text-xs text-slate-500 mt-1">Comprimiendo fotos...</p>}
+          {sourceMode === "upload" ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Fotos del portafolio (ideal 15)</label>
+              <input type="file" accept="image/*" multiple onChange={handleFiles} className="w-full text-sm" />
+              {compressing && <p className="text-xs text-slate-500 mt-1">Comprimiendo fotos...</p>}
 
-            {!compressing && files.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-3">
-                {files.map((f, i) => (
-                  <div key={i}>
-                    <img
-                      src={URL.createObjectURL(f)}
-                      alt={`preview-${i}`}
-                      className="aspect-square object-cover rounded-lg mb-1"
-                    />
-                    <input
-                      value={itemNames[i] || ""}
-                      onChange={(e) => updateItemName(i, e.target.value)}
-                      className="w-full border border-slate-300 rounded px-1.5 py-1 text-xs"
-                      placeholder={`Producto ${i + 1}`}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              {!compressing && files.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-3">
+                  {files.map((f, i) => (
+                    <div key={i}>
+                      <img
+                        src={URL.createObjectURL(f)}
+                        alt={`preview-${i}`}
+                        className="aspect-square object-cover rounded-lg mb-1"
+                      />
+                      <input
+                        value={itemNames[i] || ""}
+                        onChange={(e) => updateItemName(i, e.target.value)}
+                        className="w-full border border-slate-300 rounded px-1.5 py-1 text-xs"
+                        placeholder={`Producto ${i + 1}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Links de producto y foto (CSV/TXT)
+              </label>
+              <p className="text-xs text-slate-500 mb-2">
+                Columnas: <code>URL_Producto, URL_Imagen, Referencia</code> — una fila por imagen; si un producto
+                tiene varias fotos, repite la misma URL de producto en varias filas. Acepta CSV (comas) o TXT (tabs),
+                con o sin encabezado. Cada URL de producto distinta se convierte en un producto a evaluar; luego podrás
+                aprobar productos de esta curaduría para llevarlos directo a un pedido.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt"
+                onChange={handleImportFileChange}
+                className="text-sm mb-2"
+              />
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                rows={6}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-xs"
+                placeholder="URL_Producto,URL_Imagen,Referencia&#10;https://1688.com/prod1,https://cbu01.alicdn.com/img1.jpg,Bolso A"
+              />
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -232,7 +330,11 @@ export default function CurationForm() {
             disabled={submitting || compressing}
             className="w-full bg-brand-600 text-white rounded-lg py-2 font-medium disabled:opacity-60"
           >
-            {submitting ? "Creando..." : "Crear curaduría y generar link"}
+            {submitting
+              ? sourceMode === "links"
+                ? "Importando y creando..."
+                : "Creando..."
+              : "Crear curaduría y generar link"}
           </button>
         </form>
       </div>

@@ -346,6 +346,15 @@ export default function PurchaseOrderDetail() {
                           🔗 ver producto
                         </a>
                       )}
+                      {item.curationMeta && (
+                        <p
+                          className="text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 mt-1 inline-block"
+                          title={`De la curaduría "${item.curationMeta.surveyName}"`}
+                        >
+                          📊 {item.curationMeta.surveyName} · {item.curationMeta.pctPonderado}% peso ·{" "}
+                          {item.curationMeta.votos} voto(s)
+                        </p>
+                      )}
                     </td>
                     <td className="p-2 print:hidden">
                       <select

@@ -137,6 +137,19 @@ export function updateCurationSurvey(id, patch) {
   return survey;
 }
 
+// patch: name, productUrl, approvedForOrder, importedOrderIds — campos por
+// producto dentro de una curaduría (usados para conectarla con Pedidos).
+export function updateCurationSurveyItem(surveyId, itemId, patch) {
+  const db = readDb();
+  const survey = db.curationSurveys.find((s) => s.id === surveyId);
+  if (!survey) return null;
+  const item = survey.items.find((i) => i.id === itemId);
+  if (!item) return null;
+  Object.assign(item, patch);
+  writeDb(db);
+  return item;
+}
+
 // --- Curation responses ---
 export function getCurationResponses() {
   return readDb().curationResponses;

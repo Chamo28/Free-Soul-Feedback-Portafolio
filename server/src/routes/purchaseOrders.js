@@ -13,11 +13,17 @@ import {
   setPurchaseOrderItems,
   updatePurchaseOrderItem,
   deletePurchaseOrderItem,
+  getCurationSurveyById,
+  getCurationResponses,
+  updateCurationSurveyItem,
 } from "../jsonStore.js";
 import { parseImportText } from "../services/csvParser.js";
 import { downloadImages } from "../services/imageDownloader.js";
 import { computeOrderSummary, DEFAULT_CATEGORY_FREIGHT_COP } from "../services/purchaseOrderCalc.js";
 import { writePurchaseOrderSheet, rowsFromPurchaseOrder } from "../services/sheets.js";
+import { computeCurationRankings } from "../services/curationScoring.js";
+
+const CATEGORY_MAP = { bolsos: "Bolsos", calzado: "Calzado", ropa: "Ropa", accesorios: "Accesorios" };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.UPLOADS_DIR
@@ -142,6 +148,85 @@ router.post("/:id/import", requireAdmin, async (req, res) => {
   res.status(201).json({ ...updatedOrder, items, totales, importWarnings: imageWarnings, importedCount: newItems.length });
 });
 
+// --- Traer productos ganadores de una Curaduría de Portafolio ---
+//
+// No se vuelve a descargar nada de 1688: las fotos ya están en nuestro
+// servidor desde la curaduría, así que se copian de ahí (más rápido, y
+// evita que el pedido dependa de que la curaduría de origen siga existiendo
+// más adelante — si se borrara, no se llevaría las fotos del pedido).
+router.post("/:id/import-from-curation", requireAdmin, async (req, res) => {
+  const order = getPurchaseOrderById(req.params.id);
+  if (!order) return res.status(404).json({ error: "Pedido no encontrado." });
+
+  const { surveyId, itemIds, totalUnidades } = req.body || {};
+  const survey = getCurationSurveyById(surveyId);
+  if (!survey) return res.status(404).json({ error: "Encuesta de curaduría no encontrada." });
+  if (!Array.isArray(itemIds) || itemIds.length === 0) {
+    return res.status(400).json({ error: "Selecciona al menos un producto de la curaduría." });
+  }
+
+  const responses = getCurationResponses().filter((r) => r.surveyId === surveyId);
+  const { ranking } = computeCurationRankings(survey, responses);
+  const rankByProductId = new Map(ranking.map((r) => [r.productId, r]));
+
+  const selectedItems = survey.items.filter((i) => itemIds.includes(i.id));
+  const sumWeight = selectedItems.reduce((sum, it) => sum + (rankByProductId.get(it.id)?.pctPonderado || 0), 0);
+  const mappedCategoria = CATEGORY_MAP[(survey.category || "").trim().toLowerCase()] || "";
+
+  const newItems = [];
+  for (const curItem of selectedItems) {
+    const itemId = crypto.randomUUID();
+    const srcPhotos = curItem.photos && curItem.photos.length ? curItem.photos : curItem.photo ? [curItem.photo] : [];
+    const destDir = path.join(UPLOADS_DIR, "purchase-orders", order.id, itemId);
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const photos = [];
+    srcPhotos.forEach((relUrl, idx) => {
+      try {
+        const srcPath = path.join(UPLOADS_DIR, relUrl.replace(/^\/uploads[\\/]/, ""));
+        const destFilename = `img-${idx + 1}.jpg`;
+        fs.copyFileSync(srcPath, path.join(destDir, destFilename));
+        photos.push(`/uploads/purchase-orders/${order.id}/${itemId}/${destFilename}`);
+      } catch {
+        // si por algún motivo la foto fuente ya no existe, se omite sin romper el resto
+      }
+    });
+
+    const rankRow = rankByProductId.get(curItem.id);
+    const pct = rankRow?.pctPonderado || 0;
+    const suggestedUnits = totalUnidades && sumWeight > 0 ? Math.round((Number(totalUnidades) * pct) / sumWeight) : 0;
+
+    newItems.push({
+      id: itemId,
+      productUrl: curItem.productUrl || "",
+      referencia: curItem.name,
+      photos,
+      categoria: mappedCategoria,
+      genero: "",
+      costoUnitarioRMB: 0,
+      cantidadPorEmpaque: suggestedUnits,
+      cantidadEmpaques: suggestedUnits > 0 ? 1 : 0,
+      fleteOverrideCOP: null,
+      curationMeta: {
+        surveyId: survey.id,
+        surveyName: survey.name,
+        surveyItemId: curItem.id,
+        pctPonderado: pct,
+        votos: rankRow?.votos || 0,
+        label: rankRow?.label || "",
+      },
+    });
+
+    updateCurationSurveyItem(survey.id, curItem.id, {
+      importedOrderIds: [...(curItem.importedOrderIds || []), order.id],
+    });
+  }
+
+  const updatedOrder = setPurchaseOrderItems(order.id, [...order.items, ...newItems]);
+  const { items, totales } = computeOrderSummary(updatedOrder);
+  res.status(201).json({ ...updatedOrder, items, totales, importedCount: newItems.length });
+});
+
 // --- Items individuales ---
 
 router.patch("/:id/items/:itemId", requireAdmin, (req, res) => {
@@ -206,6 +291,8 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
     "Flete_Unitario_COP",
     "Flete_Total_COP",
     "Costo_Landed_Total_COP",
+    "Origen_Curaduria",
+    "Peso_Ponderado_Curaduria",
   ];
   const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [header.map(csvEscape).join(",")];
@@ -225,6 +312,8 @@ router.get("/:id/export.csv", requireAdmin, (req, res) => {
         item.fleteUnitarioCOP,
         item.fleteTotalCOP,
         item.costoLandedTotalCOP,
+        item.curationMeta?.surveyName || "",
+        item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
       ]
         .map(csvEscape)
         .join(",")

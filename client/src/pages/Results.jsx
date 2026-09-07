@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
 import ZoomModal from "../components/ZoomModal.jsx";
 import {
@@ -10,6 +10,10 @@ import {
   getCurationRankings,
   getCurationResponses,
   deleteCurationResponse,
+  updateCurationSurveyItem,
+  getPurchaseOrders,
+  createPurchaseOrder,
+  importCurationToPurchaseOrder,
 } from "../api.js";
 
 const badgeClass = {
@@ -255,8 +259,10 @@ function CurationResults({ initialSurveyId }) {
   const [syncing, setSyncing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [zoomItem, setZoomItem] = useState(null);
+  const [approving, setApproving] = useState(null); // productId en proceso de aprobar/editar
   const selectedSurvey = surveys.find((s) => s.id === selectedId);
   const selectedResponse = responses.find((r) => r.id === selectedResponseId);
+  const navigate = useNavigate();
 
   useEffect(() => {
     Promise.all([getCurationSurveys(), getSyncStatus()]).then(([list, s]) => {
@@ -304,6 +310,36 @@ function CurationResults({ initialSurveyId }) {
     } finally {
       setDeleting(false);
     }
+  };
+
+  const toggleApproved = async (row) => {
+    setApproving(row.productId);
+    try {
+      await updateCurationSurveyItem(selectedId, row.productId, { approvedForOrder: !row.approvedForOrder });
+      setRanking((prev) => ({
+        ...prev,
+        ranking: prev.ranking.map((r) =>
+          r.productId === row.productId ? { ...r, approvedForOrder: !r.approvedForOrder } : r
+        ),
+      }));
+    } finally {
+      setApproving(null);
+    }
+  };
+
+  const saveProductUrl = async (row, url) => {
+    if (url === row.productUrl) return;
+    await updateCurationSurveyItem(selectedId, row.productId, { productUrl: url });
+    setRanking((prev) => ({
+      ...prev,
+      ranking: prev.ranking.map((r) => (r.productId === row.productId ? { ...r, productUrl: url } : r)),
+    }));
+  };
+
+  const approvedRows = ranking ? ranking.ranking.filter((r) => r.approvedForOrder) : [];
+
+  const handleOrderCreated = (orderId) => {
+    navigate(`/admin/pedidos/${orderId}`);
   };
 
   if (loading) return <p className="text-slate-500">Cargando...</p>;
@@ -426,11 +462,22 @@ function CurationResults({ initialSurveyId }) {
                       <p className="font-semibold text-slate-800 truncate">
                         {row.name}{" "}
                         {row.vecesFavorito > 0 && <span className="text-amber-500">★{row.vecesFavorito}</span>}
+                        {row.importedOrderIds?.length > 0 && (
+                          <span className="ml-1 text-[10px] font-medium text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded-full">
+                            en {row.importedOrderIds.length} pedido(s)
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-slate-500">
                         {row.votos} voto(s) · {row.pctSeleccion}% tasa de selección
                         {row.posicionPromedio != null && <> · puesto promedio #{row.posicionPromedio}</>}
                       </p>
+                      <input
+                        defaultValue={row.productUrl || ""}
+                        onBlur={(e) => saveProductUrl(row, e.target.value.trim())}
+                        placeholder="Link del producto (1688/Alibaba)..."
+                        className="print:hidden mt-1 w-full text-xs border border-slate-200 rounded px-2 py-1 text-slate-500"
+                      />
                     </div>
                     <div className="text-right">
                       <p className="font-bold text-brand-700 text-sm">{row.pctPonderado}%</p>
@@ -441,15 +488,147 @@ function CurationResults({ initialSurveyId }) {
                     >
                       {row.label}
                     </span>
+                    <button
+                      onClick={() => toggleApproved(row)}
+                      disabled={approving === row.productId}
+                      className={`print:hidden text-xs font-semibold rounded-lg px-2.5 py-1.5 whitespace-nowrap disabled:opacity-60 ${
+                        row.approvedForOrder
+                          ? "bg-brand-600 text-white"
+                          : "border border-slate-300 text-slate-600"
+                      }`}
+                      title="Aprobar este producto para incluirlo en un pedido"
+                    >
+                      🛒 {row.approvedForOrder ? "Aprobado" : "Aprobar"}
+                    </button>
                   </div>
                 ))}
               </div>
+
+              {approvedRows.length > 0 && (
+                <CreateOrderPanel surveyId={selectedId} approvedRows={approvedRows} onCreated={handleOrderCreated} />
+              )}
             </>
           )}
         </>
       )}
 
       <ZoomModal photo={zoomItem?.photo} name={zoomItem?.name} onClose={() => setZoomItem(null)} />
+    </div>
+  );
+}
+
+function CreateOrderPanel({ surveyId, approvedRows, onCreated }) {
+  const [mode, setMode] = useState("nuevo"); // "nuevo" | "existente"
+  const [newOrderName, setNewOrderName] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [existingOrderId, setExistingOrderId] = useState("");
+  const [totalUnidades, setTotalUnidades] = useState(100);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getPurchaseOrders().then((list) => {
+      setOrders(list);
+      if (list.length > 0) setExistingOrderId(list[0].id);
+    });
+  }, []);
+
+  const handleConfirm = async () => {
+    setError("");
+    const units = Number(totalUnidades);
+    if (!Number.isInteger(units) || units < 1) {
+      setError("Las unidades totales a repartir deben ser un número entero mayor a 0.");
+      return;
+    }
+    if (mode === "nuevo" && !newOrderName.trim()) {
+      setError("Ponle un nombre al pedido nuevo.");
+      return;
+    }
+    if (mode === "existente" && !existingOrderId) {
+      setError("Selecciona un pedido existente.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const orderId =
+        mode === "nuevo" ? (await createPurchaseOrder(newOrderName.trim())).id : existingOrderId;
+      await importCurationToPurchaseOrder(orderId, {
+        surveyId,
+        itemIds: approvedRows.map((r) => r.productId),
+        totalUnidades: units,
+      });
+      onCreated(orderId);
+    } catch (err) {
+      setError(err.response?.data?.error || "Error creando/actualizando el pedido.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="print:hidden bg-brand-50 border border-brand-200 rounded-xl p-4 mt-4">
+      <p className="font-semibold text-brand-800 mb-1">
+        🛒 Crear pedido con {approvedRows.length} producto(s) aprobado(s)
+      </p>
+      <p className="text-xs text-brand-700 mb-3">
+        Se sugerirá la cantidad por empaque de cada producto proporcional a su peso ponderado en esta curaduría —
+        podrás confirmar o editar cada cantidad dentro del pedido antes de finalizar.
+      </p>
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="flex gap-3">
+          <label className="text-sm flex items-center gap-1.5">
+            <input type="radio" checked={mode === "nuevo"} onChange={() => setMode("nuevo")} />
+            Pedido nuevo
+          </label>
+          <label className="text-sm flex items-center gap-1.5">
+            <input type="radio" checked={mode === "existente"} onChange={() => setMode("existente")} />
+            Pedido existente
+          </label>
+        </div>
+
+        {mode === "nuevo" ? (
+          <input
+            value={newOrderName}
+            onChange={(e) => setNewOrderName(e.target.value)}
+            placeholder="Nombre del pedido nuevo"
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
+          />
+        ) : orders.length > 0 ? (
+          <select
+            value={existingOrderId}
+            onChange={(e) => setExistingOrderId(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
+          >
+            {orders.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs text-slate-500">No hay pedidos existentes todavía.</span>
+        )}
+
+        <div>
+          <label className="block text-xs text-slate-600 mb-0.5">Unidades totales a repartir</label>
+          <input
+            type="number"
+            min={1}
+            value={totalUnidades}
+            onChange={(e) => setTotalUnidades(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-32"
+          />
+        </div>
+
+        <button
+          onClick={handleConfirm}
+          disabled={submitting}
+          className="bg-brand-600 text-white rounded-lg px-4 py-1.5 text-sm font-medium disabled:opacity-60"
+        >
+          {submitting ? "Enviando..." : "Confirmar"}
+        </button>
+      </div>
+      {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
     </div>
   );
 }

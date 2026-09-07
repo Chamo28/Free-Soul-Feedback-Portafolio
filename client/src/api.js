@@ -31,13 +31,21 @@ function withResolvedProductPhotos(product) {
 
 function withResolvedCurationSurvey(survey) {
   if (!survey) return survey;
-  return { ...survey, items: (survey.items || []).map((i) => ({ ...i, photo: resolvePhoto(i.photo) })) };
+  return {
+    ...survey,
+    items: (survey.items || []).map((i) => ({
+      ...i,
+      photo: resolvePhoto(i.photo),
+      photos: (i.photos || []).map(resolvePhoto),
+    })),
+  };
 }
 
 function withResolvedRankingRow(row) {
   if (!row) return row;
   const next = { ...row };
   if (next.photo) next.photo = resolvePhoto(next.photo);
+  if (next.photos) next.photos = next.photos.map(resolvePhoto);
   if (next.product) next.product = withResolvedProductPhotos(next.product);
   return next;
 }
@@ -170,6 +178,21 @@ export async function deleteCurationResponse(id) {
   return data;
 }
 
+// Crea una curaduría completa a partir de texto CSV/TXT con links de producto
+// + foto (mismo formato/mecanismo que la importación de Pedidos).
+export async function createCurationSurveyFromLinks(payload) {
+  const { data } = await api.post("/curation/surveys/import-links", payload);
+  return withResolvedCurationSurvey(data);
+}
+
+// patch: name, productUrl, approvedForOrder — edición puntual de un producto
+// dentro de una curaduría (usado para el botón "Aprobar para pedido" y edición
+// de link en los resultados).
+export async function updateCurationSurveyItem(surveyId, itemId, patch) {
+  const { data } = await api.patch(`/curation/surveys/${surveyId}/items/${itemId}`, patch);
+  return data;
+}
+
 // --- Gestión de Pedidos y Sourcing ---
 
 function withResolvedPurchaseOrder(order) {
@@ -220,6 +243,14 @@ export async function deletePurchaseOrderItem(orderId, itemId) {
 export async function syncPurchaseOrder(id) {
   const { data } = await api.post(`/purchase-orders/${id}/sync`);
   return data;
+}
+
+// Trae productos aprobados de una curaduría hacia un pedido (nuevo o existente),
+// sugiriendo cantidad por empaque proporcional al puntaje ponderado de cada uno.
+// payload: { surveyId, itemIds, totalUnidades }
+export async function importCurationToPurchaseOrder(orderId, payload) {
+  const { data } = await api.post(`/purchase-orders/${orderId}/import-from-curation`, payload);
+  return withResolvedPurchaseOrder(data);
 }
 
 export async function downloadPurchaseOrderCsv(id, filename) {

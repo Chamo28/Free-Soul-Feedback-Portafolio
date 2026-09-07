@@ -73,6 +73,8 @@ const PURCHASE_ORDERS_HEADER = [
   "Flete_Unitario_COP",
   "Flete_Total_COP",
   "Costo_Landed_Total_COP",
+  "Origen_Curaduria",
+  "Peso_Ponderado_Curaduria",
 ];
 
 const CURATION_RANKING_HEADER = [
@@ -304,6 +306,8 @@ export function rowsFromPurchaseOrder(order, computedItems) {
     item.fleteUnitarioCOP,
     item.fleteTotalCOP,
     item.costoLandedTotalCOP,
+    item.curationMeta?.surveyName || "",
+    item.curationMeta ? `${item.curationMeta.pctPonderado}%` : "",
   ]);
 }
 

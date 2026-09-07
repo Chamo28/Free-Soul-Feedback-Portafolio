@@ -11,6 +11,7 @@ import {
   getCurationSurveyById,
   addCurationSurvey,
   updateCurationSurvey,
+  updateCurationSurveyItem,
   deleteCurationSurvey,
   addCurationResponse,
   getCurationResponses,
@@ -26,6 +27,8 @@ import {
   deleteCurationResponseRow,
 } from "../services/sheets.js";
 import { computeCurationRankings } from "../services/curationScoring.js";
+import { parseImportText } from "../services/csvParser.js";
+import { downloadImages } from "../services/imageDownloader.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // UPLOADS_DIR permite apuntar a un disco persistente en producción (ver README).
@@ -93,10 +96,15 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, re
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 72 })
         .toFile(outPath);
+      const photo = `/uploads/curation/${id}/${filename}`;
       items.push({
         id: itemId,
         name: (names[i] && String(names[i]).trim()) || `Producto ${i + 1}`,
-        photo: `/uploads/curation/${id}/${filename}`,
+        photo,
+        photos: [photo],
+        productUrl: "",
+        approvedForOrder: false,
+        importedOrderIds: [],
       });
     }
 
@@ -118,6 +126,89 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, re
   }
 });
 
+// Crea una curaduría a partir de un CSV/TXT de links (mismo formato e idea
+// que la importación de Pedidos): una fila por imagen, agrupadas por URL de
+// producto repetida. Así cada producto queda con su link de 1688/Alibaba
+// desde el principio, listo para conectarlo después con un pedido.
+router.post("/surveys/import-links", requireAdmin, async (req, res) => {
+  try {
+    const { name, category, selectionMode, selectionCount, instructions, text } = req.body || {};
+    if (!name || !category) {
+      return res.status(400).json({ error: "Falta el nombre de la dinámica o la categoría." });
+    }
+    const mode = selectionMode === "max" ? "max" : "exact";
+    const count = Number(selectionCount);
+    if (!Number.isInteger(count) || count < 1) {
+      return res.status(400).json({ error: "La cantidad a seleccionar debe ser un número entero mayor a 0." });
+    }
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ error: "No llegó contenido para importar (pega o sube el CSV/TXT)." });
+    }
+
+    const { items: parsedItems, warnings } = parseImportText(text);
+    if (parsedItems.length === 0) {
+      return res.status(400).json({ error: "No se reconoció ningún producto en el archivo.", warnings });
+    }
+
+    const id = crypto.randomUUID();
+    const surveyDir = path.join(UPLOADS_DIR, "curation", id);
+    const items = [];
+    const importWarnings = [...warnings];
+
+    for (let i = 0; i < parsedItems.length; i++) {
+      const parsed = parsedItems[i];
+      const itemId = crypto.randomUUID();
+      const itemDir = path.join(surveyDir, itemId);
+      const downloadResults = parsed.images.length > 0 ? await downloadImages(parsed.images, itemDir) : [];
+      const photos = downloadResults
+        .filter((r) => r.ok)
+        .map((r) => `/uploads/curation/${id}/${itemId}/${r.filename}`);
+      const failed = downloadResults.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        importWarnings.push(`"${parsed.referencia}": ${failed.length} foto(s) no se pudieron descargar.`);
+      }
+      if (photos.length === 0) {
+        importWarnings.push(`"${parsed.referencia}": sin ninguna foto válida, se omite de la lista.`);
+        continue; // sin foto no se le puede mostrar nada al evaluador
+      }
+      items.push({
+        id: itemId,
+        name: parsed.referencia,
+        photo: photos[0],
+        photos,
+        productUrl: parsed.productUrl,
+        approvedForOrder: false,
+        importedOrderIds: [],
+      });
+    }
+
+    if (items.length < 2) {
+      return res.status(400).json({ error: "Necesitas al menos 2 productos con foto válida para la curaduría.", warnings: importWarnings });
+    }
+    if (mode === "exact" && count > items.length) {
+      return res
+        .status(400)
+        .json({ error: `Solo quedaron ${items.length} productos con foto válida, menos que los ${count} que pedías seleccionar.`, warnings: importWarnings });
+    }
+
+    const survey = {
+      id,
+      type: "curaduria",
+      name: name.trim(),
+      category,
+      instructions: (instructions && String(instructions).trim()) || "",
+      selectionRule: { mode, count },
+      items,
+      createdAt: new Date().toISOString(),
+    };
+    addCurationSurvey(survey);
+    res.status(201).json({ ...survey, importWarnings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error creando la curaduría: " + err.message });
+  }
+});
+
 router.patch("/surveys/:id", requireAdmin, (req, res) => {
   const survey = getCurationSurveyById(req.params.id);
   if (!survey) return res.status(404).json({ error: "Encuesta no encontrada." });
@@ -125,6 +216,19 @@ router.patch("/surveys/:id", requireAdmin, (req, res) => {
   if (typeof req.body.instructions === "string") patch.instructions = req.body.instructions.trim();
   if (typeof req.body.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
   const updated = updateCurationSurvey(req.params.id, patch);
+  res.json(updated);
+});
+
+// Edita un producto puntual dentro de una curaduría: su link de producto,
+// si está "aprobado para pedido", o su nombre.
+router.patch("/surveys/:id/items/:itemId", requireAdmin, (req, res) => {
+  const allowed = ["name", "productUrl", "approvedForOrder"];
+  const patch = {};
+  for (const key of allowed) {
+    if (key in (req.body || {})) patch[key] = req.body[key];
+  }
+  const updated = updateCurationSurveyItem(req.params.id, req.params.itemId, patch);
+  if (!updated) return res.status(404).json({ error: "Producto no encontrado en esta encuesta." });
   res.json(updated);
 });
 
