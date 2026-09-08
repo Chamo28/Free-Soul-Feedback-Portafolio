@@ -8,22 +8,28 @@
    los colores brand y sand de Tailwind (ver tailwind.config.js). Cada marca
    los sobreescribe en caliente vía BrandContext.jsx — esto es solo el
    fallback antes de que corra JS, para que nunca "parpadee" el color
-   equivocado. */
+   equivocado.
+
+   Van en "R G B" (canales separados por espacio), NO en hex — tailwind.
+   config.js las envuelve en rgb(var(...) / <alpha-value>) para poder
+   componer opacidad (text-brand-100/80, etc.); con un hex ahí ese patrón
+   genera un color inválido. BrandContext.jsx convierte el hex legible de
+   brands.js a este mismo formato al aplicar cada marca. */
 :root {
-  --brand-50: #f1f7fb;
-  --brand-100: #d2ecf9;
-  --brand-200: #a7d4ec;
-  --brand-500: #4c6d94;
-  --brand-600: #2d4568;
-  --brand-700: #1d2a43;
-  --brand-900: #141d30;
-  --sand-50: #faf7f5;
-  --sand-100: #f3ece7;
-  --sand-300: #e3d3c8;
-  --sand-500: #d4c5b9;
-  --sand-600: #b9a690;
-  --sand-700: #93816c;
-  --sand-800: #6b5a48;
+  --brand-50: 241 247 251;
+  --brand-100: 210 236 249;
+  --brand-200: 167 212 236;
+  --brand-500: 76 109 148;
+  --brand-600: 45 69 104;
+  --brand-700: 29 42 67;
+  --brand-900: 20 29 48;
+  --sand-50: 250 247 245;
+  --sand-100: 243 236 231;
+  --sand-300: 227 211 200;
+  --sand-500: 212 197 185;
+  --sand-600: 185 166 144;
+  --sand-700: 147 129 108;
+  --sand-800: 107 90 72;
 }
 
 html, body, #root {

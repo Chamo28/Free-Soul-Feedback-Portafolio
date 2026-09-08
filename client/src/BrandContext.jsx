@@ -3,6 +3,19 @@ import { resolveBrandFromLocation } from "./brands.js";
 
 const BrandContext = createContext(null);
 
+// brands.js guarda cada color en hex (legible, fácil de editar a mano
+// leyendo un pantallazo/logo), pero las variables CSS --brand-*/--sand-*
+// se guardan en "R G B" (canales separados por espacio) — ver el comentario
+// en index.css/tailwind.config.js: así Tailwind puede componer opacidad
+// (text-brand-100/80, etc.), algo que no funciona con un hex directo.
+function hexToRgbTriplet(hex) {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `${r} ${g} ${b}`;
+}
+
 // Se resuelve UNA vez al cargar el módulo (antes del primer render) — el
 // mismo valor sirve para toda la sesión de la pestaña: cambiar de marca
 // significa navegar a otra URL (otro prefijo o, a futuro, otro dominio),
@@ -20,7 +33,7 @@ export function BrandProvider({ children }) {
     // así rebrandear es cambiar estos valores, no tocar componentes.
     const root = document.documentElement;
     for (const [key, value] of Object.entries(activeBrand.colors)) {
-      root.style.setProperty(key, value);
+      root.style.setProperty(key, hexToRgbTriplet(value));
     }
     root.setAttribute("data-brand", activeBrand.id);
 

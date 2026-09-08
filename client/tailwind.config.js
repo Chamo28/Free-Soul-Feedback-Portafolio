@@ -8,23 +8,31 @@ export default {
         // sobreescritas por marca en BrandContext.jsx) — así TODA la app
         // (bg-brand-600, text-brand-700, bg-sand-500, etc.) se re-colorea
         // sola según la marca activa, sin tocar ningún componente.
+        //
+        // Las variables guardan "R G B" (canales separados por espacio, ej.
+        // "45 69 104"), NO un hex — y se envuelven en rgb(var(...) /
+        // <alpha-value>) para que Tailwind pueda componer la opacidad
+        // (text-brand-100/80, bg-brand-700/50, etc.). Con var(--brand-100)
+        // a secas esas clases con "/opacidad" generaban un color inválido y
+        // el texto se veía negro (bug reportado: subtítulos del banner/login
+        // en negro sobre fondo navy en vez de blanco/claro).
         brand: {
-          50: "var(--brand-50)",
-          100: "var(--brand-100)",
-          200: "var(--brand-200)",
-          500: "var(--brand-500)",
-          600: "var(--brand-600)",
-          700: "var(--brand-700)",
-          900: "var(--brand-900)",
+          50: "rgb(var(--brand-50) / <alpha-value>)",
+          100: "rgb(var(--brand-100) / <alpha-value>)",
+          200: "rgb(var(--brand-200) / <alpha-value>)",
+          500: "rgb(var(--brand-500) / <alpha-value>)",
+          600: "rgb(var(--brand-600) / <alpha-value>)",
+          700: "rgb(var(--brand-700) / <alpha-value>)",
+          900: "rgb(var(--brand-900) / <alpha-value>)",
         },
         sand: {
-          50: "var(--sand-50)",
-          100: "var(--sand-100)",
-          300: "var(--sand-300)",
-          500: "var(--sand-500)",
-          600: "var(--sand-600)",
-          700: "var(--sand-700)",
-          800: "var(--sand-800)",
+          50: "rgb(var(--sand-50) / <alpha-value>)",
+          100: "rgb(var(--sand-100) / <alpha-value>)",
+          300: "rgb(var(--sand-300) / <alpha-value>)",
+          500: "rgb(var(--sand-500) / <alpha-value>)",
+          600: "rgb(var(--sand-600) / <alpha-value>)",
+          700: "rgb(var(--sand-700) / <alpha-value>)",
+          800: "rgb(var(--sand-800) / <alpha-value>)",
         },
       },
       fontFamily: {
