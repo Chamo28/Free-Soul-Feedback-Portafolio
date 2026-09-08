@@ -1,14 +1,12 @@
 import fs from "fs";
 import path from "path";
 import { google } from "googleapis";
+import { currentBrand } from "../brandContext.js";
 
-const SHEET_ID = process.env.GOOGLE_SHEET_ID || "";
-const SHEET_TAB = process.env.GOOGLE_SHEET_TAB || "Respuestas";
-// Desarrollo local: ruta a un archivo JSON de credenciales en disco.
+// Credenciales del service account: se comparten entre todas las marcas (es
+// la misma cuenta de Google) — lo único que cambia por marca es a qué
+// spreadsheet apuntan las llamadas (brandSheetId() abajo).
 const CREDENTIALS_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
-// Producción (Render, etc.): el JSON completo de la Service Account codificado
-// en base64 dentro de una variable de entorno (no se puede subir un archivo
-// a git ni siempre hay disco persistente). Ver README para cómo generarlo.
 const CREDENTIALS_BASE64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 || "";
 
 function loadCredentialsObject() {
@@ -22,9 +20,20 @@ function loadCredentialsObject() {
   return null;
 }
 
-// Pestañas fijas para el módulo de Curaduría de Portafolio (Top-K).
+// Config de Sheets de la marca activa — se lee en el momento (no una sola
+// vez al cargar el módulo) para que siga la marca del request actual.
+function brandSheetId() {
+  return process.env[currentBrand().sheetIdEnv] || "";
+}
+function brandSheetTab() {
+  return process.env[currentBrand().sheetTabEnv] || "Respuestas";
+}
+
+// Pestañas fijas — el nombre es el mismo en todas las marcas porque cada
+// marca tiene su propio spreadsheet (no hace falta diferenciarlas ahí).
 const CURATION_RESPONSES_TAB = "Curaduria_Respuestas";
 const CURATION_RANKING_TAB = "Curaduria_Ranking";
+const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
 
 // La última columna (Respuesta_ID) no es parte del pedido original de negocio,
 // es interna: nos permite ubicar y borrar la fila exacta de un evaluador
@@ -54,8 +63,6 @@ const CURATION_RESPONSES_HEADER = [
   "Comentarios",
   "Respuesta_ID",
 ];
-
-const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
 
 const PURCHASE_ORDERS_HEADER = [
   "Pedido_ID",
@@ -92,38 +99,41 @@ const CURATION_RANKING_HEADER = [
   "Etiqueta",
 ];
 
-let sheetsClient = null;
+let sheetsClient = null; // un solo cliente autenticado, compartido por todas las marcas
 let initError = null;
-const headerEnsuredTabs = new Set();
-const tabsKnownToExist = new Set();
+// Cacheados por "spreadsheetId:tab" (no solo "tab") — dos marcas distintas
+// pueden tener una pestaña con el mismo nombre en spreadsheets distintos.
+const headerEnsuredKeys = new Set();
+const tabsKnownToExistKeys = new Set();
 
 // La API de Sheets no crea una pestaña sola con values.append/update — hay que
 // pedirlo explícitamente con batchUpdate. Sin esto, si el usuario no crea las
 // pestañas a mano, cada escritura falla en silencio (queda "pendiente" para
-// siempre). Se cachea por spreadsheetId+tab para no consultar en cada request.
-async function ensureTabExists(client, tab) {
-  if (tabsKnownToExist.has(tab)) return;
+// siempre).
+async function ensureTabExists(client, spreadsheetId, tab) {
+  const key = `${spreadsheetId}:${tab}`;
+  if (tabsKnownToExistKeys.has(key)) return;
   const meta = await client.spreadsheets.get({
-    spreadsheetId: SHEET_ID,
+    spreadsheetId,
     fields: "sheets.properties.title",
   });
   const existingTitles = (meta.data.sheets || []).map((s) => s.properties.title);
   if (existingTitles.includes(tab)) {
-    tabsKnownToExist.add(tab);
+    tabsKnownToExistKeys.add(key);
     return;
   }
   await client.spreadsheets.batchUpdate({
-    spreadsheetId: SHEET_ID,
+    spreadsheetId,
     requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
   });
-  tabsKnownToExist.add(tab);
+  tabsKnownToExistKeys.add(key);
 }
 
 // Devuelve el sheetId (numérico, interno) de una pestaña por su nombre —
 // lo pide cualquier operación de fila/columna (deleteDimension, etc).
-async function getTabSheetId(client, tab) {
+async function getTabSheetId(client, spreadsheetId, tab) {
   const meta = await client.spreadsheets.get({
-    spreadsheetId: SHEET_ID,
+    spreadsheetId,
     fields: "sheets.properties",
   });
   const found = (meta.data.sheets || []).find((s) => s.properties.title === tab);
@@ -131,15 +141,15 @@ async function getTabSheetId(client, tab) {
 }
 
 function isConfigured() {
-  if (!SHEET_ID) return false;
+  if (!brandSheetId()) return false;
   if (CREDENTIALS_BASE64) return true;
   return Boolean(CREDENTIALS_PATH && fs.existsSync(path.resolve(CREDENTIALS_PATH)));
 }
 
 async function getClient() {
   if (sheetsClient) return sheetsClient;
-  if (!isConfigured()) {
-    initError = "Google Sheets no está configurado (falta GOOGLE_SHEET_ID o las credenciales).";
+  if (!CREDENTIALS_BASE64 && !CREDENTIALS_PATH) {
+    initError = "Google Sheets no está configurado (faltan las credenciales del service account).";
     return null;
   }
   try {
@@ -159,12 +169,13 @@ async function getClient() {
   }
 }
 
-async function ensureHeaderFor(client, tab, headerRow) {
-  if (headerEnsuredTabs.has(tab)) return;
+async function ensureHeaderFor(client, spreadsheetId, tab, headerRow) {
+  const key = `${spreadsheetId}:${tab}`;
+  if (headerEnsuredKeys.has(key)) return;
   try {
     const lastCol = colLetter(headerRow.length);
     const res = await client.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${tab}!A1:${lastCol}1`,
     });
     const currentHeader = res.data.values?.[0] || [];
@@ -173,16 +184,16 @@ async function ensureHeaderFor(client, tab, headerRow) {
     // corto para siempre.
     if (currentHeader.length < headerRow.length) {
       await client.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId,
         range: `${tab}!A1:${lastCol}1`,
         valueInputOption: "RAW",
         requestBody: { values: [headerRow] },
       });
     }
-    headerEnsuredTabs.add(tab);
+    headerEnsuredKeys.add(key);
   } catch (err) {
     // Si la pestaña no existe u otro error, seguimos igual: el append/update la puede crear.
-    headerEnsuredTabs.add(tab);
+    headerEnsuredKeys.add(key);
   }
 }
 
@@ -191,11 +202,13 @@ function colLetter(n) {
 }
 
 export function getStatus() {
+  const brand = currentBrand();
   return {
     configured: isConfigured(),
     error: initError,
-    sheetId: SHEET_ID || null,
-    tab: SHEET_TAB,
+    brand: brand.id,
+    sheetId: brandSheetId() || null,
+    tab: brandSheetTab(),
     curationResponsesTab: CURATION_RESPONSES_TAB,
     curationRankingTab: CURATION_RANKING_TAB,
     purchaseOrdersTab: PURCHASE_ORDERS_TAB,
@@ -221,11 +234,11 @@ export function rowFromResponse(r, product) {
 }
 
 export async function appendRow(row) {
-  return appendRowToTab(SHEET_TAB, HEADER_ROW, row);
+  return appendRowToTab(brandSheetTab(), HEADER_ROW, row);
 }
 
 export async function deleteResponseRow(responseId) {
-  return deleteRowByIdColumn(SHEET_TAB, HEADER_ROW.length - 1, responseId);
+  return deleteRowByIdColumn(brandSheetTab(), HEADER_ROW.length - 1, responseId);
 }
 
 // --- Curaduría de Portafolio (Top-K) ---
@@ -260,13 +273,15 @@ export async function deleteCurationResponseRow(responseId) {
 export async function writeCurationRankingSheet(surveyId, rows) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError };
+  const spreadsheetId = brandSheetId();
+  if (!spreadsheetId) return { ok: false, error: "Falta configurar la hoja de Google de esta marca." };
   try {
-    await ensureTabExists(client, CURATION_RANKING_TAB);
-    await ensureHeaderFor(client, CURATION_RANKING_TAB, CURATION_RANKING_HEADER);
+    await ensureTabExists(client, spreadsheetId, CURATION_RANKING_TAB);
+    await ensureHeaderFor(client, spreadsheetId, CURATION_RANKING_TAB, CURATION_RANKING_HEADER);
     // Traer todo lo existente para conservar filas de otras encuestas de curaduría.
     const lastCol = colLetter(CURATION_RANKING_HEADER.length);
     const res = await client.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${CURATION_RANKING_TAB}!A2:${lastCol}100000`,
     });
     const existing = res.data.values || [];
@@ -274,12 +289,12 @@ export async function writeCurationRankingSheet(surveyId, rows) {
     const merged = [...others, ...rows];
 
     await client.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${CURATION_RANKING_TAB}!A2:${lastCol}100000`,
     });
     if (merged.length > 0) {
       await client.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId,
         range: `${CURATION_RANKING_TAB}!A2`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: merged },
@@ -325,12 +340,14 @@ export function rowsFromPurchaseOrder(order, computedItems) {
 export async function writePurchaseOrderSheet(orderId, rows) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError };
+  const spreadsheetId = brandSheetId();
+  if (!spreadsheetId) return { ok: false, error: "Falta configurar la hoja de Google de esta marca." };
   try {
-    await ensureTabExists(client, PURCHASE_ORDERS_TAB);
-    await ensureHeaderFor(client, PURCHASE_ORDERS_TAB, PURCHASE_ORDERS_HEADER);
+    await ensureTabExists(client, spreadsheetId, PURCHASE_ORDERS_TAB);
+    await ensureHeaderFor(client, spreadsheetId, PURCHASE_ORDERS_TAB, PURCHASE_ORDERS_HEADER);
     const lastCol = colLetter(PURCHASE_ORDERS_HEADER.length);
     const res = await client.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${PURCHASE_ORDERS_TAB}!A2:${lastCol}100000`,
     });
     const existing = res.data.values || [];
@@ -338,12 +355,12 @@ export async function writePurchaseOrderSheet(orderId, rows) {
     const merged = [...others, ...rows];
 
     await client.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${PURCHASE_ORDERS_TAB}!A2:${lastCol}100000`,
     });
     if (merged.length > 0) {
       await client.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId,
         range: `${PURCHASE_ORDERS_TAB}!A2`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: merged },
@@ -360,12 +377,14 @@ export async function writePurchaseOrderSheet(orderId, rows) {
 async function appendRowToTab(tab, headerRow, row) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError };
+  const spreadsheetId = brandSheetId();
+  if (!spreadsheetId) return { ok: false, error: "Falta configurar la hoja de Google de esta marca." };
   try {
-    await ensureTabExists(client, tab);
-    await ensureHeaderFor(client, tab, headerRow);
+    await ensureTabExists(client, spreadsheetId, tab);
+    await ensureHeaderFor(client, spreadsheetId, tab, headerRow);
     const lastCol = colLetter(headerRow.length);
     await client.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${tab}!A:${lastCol}`,
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
@@ -384,10 +403,12 @@ async function appendRowToTab(tab, headerRow, row) {
 async function deleteRowByIdColumn(tab, idColIndex, idValue) {
   const client = await getClient();
   if (!client) return { ok: false, error: initError, foundInSheet: false };
+  const spreadsheetId = brandSheetId();
+  if (!spreadsheetId) return { ok: false, error: "Falta configurar la hoja de Google de esta marca.", foundInSheet: false };
   try {
     const idCol = colLetter(idColIndex + 1);
     const res = await client.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       range: `${tab}!${idCol}2:${idCol}100000`,
     });
     const values = res.data.values || [];
@@ -395,13 +416,13 @@ async function deleteRowByIdColumn(tab, idColIndex, idValue) {
     if (rowOffset === -1) {
       return { ok: true, foundInSheet: false };
     }
-    const sheetId = await getTabSheetId(client, tab);
+    const sheetId = await getTabSheetId(client, spreadsheetId, tab);
     if (sheetId === null) return { ok: true, foundInSheet: false };
     // +1 porque el rango empezó en la fila 2 (índice 1, 0-based), +1 porque
     // deleteDimension usa índices 0-based de fila (fila 2 real = índice 1).
     const rowIndex = rowOffset + 1;
     await client.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       requestBody: {
         requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 } } }],
       },

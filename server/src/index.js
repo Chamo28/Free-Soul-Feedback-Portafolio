@@ -11,6 +11,7 @@ import syncRoutes from "./routes/sync.js";
 import curationRoutes from "./routes/curation.js";
 import purchaseOrdersRoutes from "./routes/purchaseOrders.js";
 import { getStatus } from "./services/sheets.js";
+import { withBrand } from "./middleware/brand.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -29,6 +30,13 @@ if (corsOrigin) {
 }
 
 app.use(express.json({ limit: "2mb" }));
+
+// Fija la marca activa del request (por header X-Brand-Id, ver
+// client/src/api.js) ANTES de cualquier ruta — jsonStore.js y sheets.js la
+// leen internamente, así que todo lo de abajo ya queda "consciente de marca"
+// sin tener que tocar cada handler.
+app.use(withBrand);
+
 const uploadsDir = process.env.UPLOADS_DIR
   ? path.resolve(process.env.UPLOADS_DIR)
   : path.join(__dirname, "..", "uploads");
@@ -36,8 +44,8 @@ app.use("/uploads", express.static(uploadsDir));
 
 // Usado por Render (health check) y por un cron externo (ver README) para
 // mantener el servicio despierto y evitar el "cold start" del plan gratuito.
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, sheets: getStatus(), uptime: process.uptime() });
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, brand: req.brand.id, sheets: getStatus(), uptime: process.uptime() });
 });
 
 app.use("/api/admin", authRoutes);

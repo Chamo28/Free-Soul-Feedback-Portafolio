@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getActiveBrand } from "./BrandContext.jsx";
 
 // En desarrollo local queda vacío: Vite hace de proxy de /api y /uploads hacia
 // el backend (ver vite.config.js), así que las rutas relativas funcionan solas.
@@ -9,9 +10,16 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const api = axios.create({ baseURL: `${API_BASE}/api` });
 
+// La sesión admin se guarda por marca (mismo dominio, varias marcas — sin
+// esto, iniciar sesión en Alas de Amara pisaría la sesión de Free Soul y
+// viceversa, porque localStorage se comparte entre todas las rutas de un
+// mismo origen).
+const TOKEN_KEY = `admin_token_${getActiveBrand().id}`;
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("admin_token");
+  const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  config.headers["X-Brand-Id"] = getActiveBrand().id;
   return config;
 });
 
@@ -22,10 +30,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && localStorage.getItem("admin_token")) {
-      localStorage.removeItem("admin_token");
-      if (!window.location.pathname.startsWith("/admin/login")) {
-        window.location.href = "/admin/login?expirada=1";
+    if (error.response?.status === 401 && localStorage.getItem(TOKEN_KEY)) {
+      localStorage.removeItem(TOKEN_KEY);
+      const loginPath = `${getActiveBrand().pathPrefix}/admin/login`;
+      if (!window.location.pathname.startsWith(loginPath)) {
+        window.location.href = `${loginPath}?expirada=1`;
       }
     }
     return Promise.reject(error);
@@ -68,16 +77,16 @@ function withResolvedRankingRow(row) {
 }
 
 export function isAdminLoggedIn() {
-  return Boolean(localStorage.getItem("admin_token"));
+  return Boolean(localStorage.getItem(TOKEN_KEY));
 }
 
 export async function adminLogin(password) {
   const { data } = await api.post("/admin/login", { password });
-  localStorage.setItem("admin_token", data.token);
+  localStorage.setItem(TOKEN_KEY, data.token);
 }
 
 export function adminLogout() {
-  localStorage.removeItem("admin_token");
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 export async function getCategories() {

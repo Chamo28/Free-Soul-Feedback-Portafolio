@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getSyncStatus, getCurationSurveys, getPurchaseOrders, getPurchaseOrder, adminLogout } from "../api.js";
+import { useBrand } from "../BrandContext.jsx";
 
 // Collage de portada: si el módulo ya tiene fotos reales (productos subidos,
 // curadurías creadas, pedidos importados), arma una grilla con ellas. Si
@@ -70,6 +71,7 @@ export default function Home() {
   const [curationPhotos, setCurationPhotos] = useState([]);
   const [orderPhotos, setOrderPhotos] = useState([]);
   const navigate = useNavigate();
+  const brand = useBrand();
 
   useEffect(() => {
     getSyncStatus()
@@ -112,10 +114,10 @@ export default function Home() {
       <header className="bg-brand-700 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/icon-512.png" alt="Free Soul DNA" className="h-11 w-11 rounded-full flex-shrink-0" />
+            <img src={brand.logo} alt={brand.name} className="h-11 w-11 rounded-full flex-shrink-0" />
             <div className="min-w-0">
-              <p className="font-display font-bold text-white text-lg leading-tight truncate">Free Soul DNA</p>
-              <p className="text-xs text-brand-100/80 -mt-0.5">Operations Suite</p>
+              <p className="font-display font-bold text-white text-lg leading-tight truncate">{brand.name}</p>
+              <p className="text-xs text-brand-100/80 -mt-0.5">{brand.operationsTagline}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">

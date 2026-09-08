@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { requireAdmin } from "../middleware/auth.js";
 import { getProducts, getProductById, addProduct, updateProduct, deleteProduct } from "../jsonStore.js";
+import { brandUploadsDir, brandUploadsUrlPrefix } from "../uploadsPath.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // UPLOADS_DIR permite apuntar a un disco persistente en producción (ver README).
@@ -51,7 +52,7 @@ router.post("/", requireAdmin, upload.array("photos", 7), async (req, res) => {
     }
 
     const id = crypto.randomUUID();
-    const productDir = path.join(UPLOADS_DIR, id);
+    const productDir = brandUploadsDir(UPLOADS_DIR, id);
     fs.mkdirSync(productDir, { recursive: true });
 
     const photoFilenames = [];
@@ -71,7 +72,7 @@ router.post("/", requireAdmin, upload.array("photos", 7), async (req, res) => {
       name,
       category,
       instructions: (instructions && String(instructions).trim()) || "",
-      photos: photoFilenames.map((f) => `/uploads/${id}/${f}`),
+      photos: photoFilenames.map((f) => `/uploads/${brandUploadsUrlPrefix()}${id}/${f}`),
       createdAt: new Date().toISOString(),
     };
     addProduct(product);
@@ -96,7 +97,7 @@ router.delete("/:id", requireAdmin, (req, res) => {
   const product = getProductById(req.params.id);
   if (!product) return res.status(404).json({ error: "Producto no encontrado." });
   deleteProduct(req.params.id);
-  const productDir = path.join(UPLOADS_DIR, req.params.id);
+  const productDir = brandUploadsDir(UPLOADS_DIR, req.params.id);
   fs.rm(productDir, { recursive: true, force: true }, () => {});
   res.json({ ok: true });
 });

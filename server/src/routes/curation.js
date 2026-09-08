@@ -29,6 +29,7 @@ import {
 import { computeCurationRankings } from "../services/curationScoring.js";
 import { parseImportText } from "../services/csvParser.js";
 import { downloadImages } from "../services/imageDownloader.js";
+import { brandUploadsDir, brandUploadsUrlPrefix } from "../uploadsPath.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // UPLOADS_DIR permite apuntar a un disco persistente en producción (ver README).
@@ -83,7 +84,7 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, re
     }
 
     const id = crypto.randomUUID();
-    const surveyDir = path.join(UPLOADS_DIR, "curation", id);
+    const surveyDir = brandUploadsDir(UPLOADS_DIR, "curation", id);
     fs.mkdirSync(surveyDir, { recursive: true });
 
     const items = [];
@@ -96,7 +97,7 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, re
         .resize({ width: 1200, withoutEnlargement: true })
         .jpeg({ quality: 72 })
         .toFile(outPath);
-      const photo = `/uploads/curation/${id}/${filename}`;
+      const photo = `/uploads/${brandUploadsUrlPrefix()}curation/${id}/${filename}`;
       items.push({
         id: itemId,
         name: (names[i] && String(names[i]).trim()) || `Producto ${i + 1}`,
@@ -151,7 +152,7 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
     }
 
     const id = crypto.randomUUID();
-    const surveyDir = path.join(UPLOADS_DIR, "curation", id);
+    const surveyDir = brandUploadsDir(UPLOADS_DIR, "curation", id);
     const items = [];
     const importWarnings = [...warnings];
 
@@ -162,7 +163,7 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
       const downloadResults = parsed.images.length > 0 ? await downloadImages(parsed.images, itemDir) : [];
       const photos = downloadResults
         .filter((r) => r.ok)
-        .map((r) => `/uploads/curation/${id}/${itemId}/${r.filename}`);
+        .map((r) => `/uploads/${brandUploadsUrlPrefix()}curation/${id}/${itemId}/${r.filename}`);
       const failed = downloadResults.filter((r) => !r.ok);
       if (failed.length > 0) {
         importWarnings.push(`"${parsed.referencia}": ${failed.length} foto(s) no se pudieron descargar.`);
@@ -236,7 +237,7 @@ router.delete("/surveys/:id", requireAdmin, (req, res) => {
   const survey = getCurationSurveyById(req.params.id);
   if (!survey) return res.status(404).json({ error: "Encuesta no encontrada." });
   deleteCurationSurvey(req.params.id);
-  const surveyDir = path.join(UPLOADS_DIR, "curation", req.params.id);
+  const surveyDir = brandUploadsDir(UPLOADS_DIR, "curation", req.params.id);
   fs.rm(surveyDir, { recursive: true, force: true }, () => {});
   res.json({ ok: true });
 });

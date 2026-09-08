@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { adminLogin } from "../api.js";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function AdminLogin() {
+  const brand = useBrand();
   const [searchParams] = useSearchParams();
   const [password, setPassword] = useState("");
   const [error, setError] = useState(
@@ -29,11 +31,11 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center bg-brand-700 px-4">
       <div className="w-full max-w-sm">
         <div className="flex justify-center mb-6">
-          <img src="/icon-512.png" alt="Free Soul DNA" className="h-24 w-24 rounded-2xl shadow-lg" />
+          <img src={brand.logo} alt={brand.name} className="h-24 w-24 rounded-2xl shadow-lg" />
         </div>
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl p-6">
-          <h1 className="text-xl font-display font-bold text-brand-700 mb-1">Free Soul DNA</h1>
-          <p className="text-sm text-slate-500 mb-5">Panel de administración · Feedback de productos</p>
+          <h1 className="text-xl font-display font-bold text-brand-700 mb-1">{brand.name}</h1>
+          <p className="text-sm text-slate-500 mb-5">Panel de administración · {brand.loginSubtitle}</p>
           <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
           <input
             type="password"
@@ -52,7 +54,7 @@ export default function AdminLogin() {
             {loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
-        <p className="text-center text-brand-100/70 text-xs mt-4">Woven into your DNA</p>
+        <p className="text-center text-brand-100/70 text-xs mt-4">{brand.footerTagline}</p>
       </div>
     </div>
   );

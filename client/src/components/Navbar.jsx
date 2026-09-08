@@ -1,9 +1,11 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { adminLogout } from "../api.js";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const brand = useBrand();
 
   const linkClass = (path, { exact = true } = {}) => {
     const active = exact ? location.pathname === path : location.pathname.startsWith(path);
@@ -17,10 +19,10 @@ export default function Navbar() {
       <div className="max-w-5xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <Link to="/admin" className="flex items-center gap-2 flex-shrink-0">
-            <img src="/icon-512.png" alt="Free Soul DNA" className="h-9 w-9 rounded-full" />
+            <img src={brand.logo} alt={brand.name} className="h-9 w-9 rounded-full" />
             <span className="font-display font-semibold text-white leading-tight hidden sm:block">
-              Free Soul DNA
-              <span className="block text-[11px] font-normal text-brand-100/80 -mt-0.5">Operations Suite</span>
+              {brand.name}
+              <span className="block text-[11px] font-normal text-brand-100/80 -mt-0.5">{brand.operationsTagline}</span>
             </span>
           </Link>
           <Link

@@ -1,26 +1,35 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { currentBrand } from "./brandContext.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATA_DIR permite apuntar a un disco persistente en producción (ej. Render),
 // donde el filesystem normal se borra en cada deploy/reinicio. En desarrollo
 // local, sin la variable, sigue usando server/data como siempre.
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "..", "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
+
+// Cada marca tiene su propio archivo de datos (brand.dataFile) — así los
+// productos/curadurías/pedidos de una marca nunca se mezclan con los de
+// otra. Se resuelve en el momento (no una sola vez al cargar el módulo) para
+// que siga la marca activa del request actual (ver brandContext.js).
+function getDbPath() {
+  return path.join(DATA_DIR, currentBrand().dataFile);
+}
 
 const DEFAULT_DB = { products: [], responses: [], curationSurveys: [], curationResponses: [], purchaseOrders: [] };
 
 function ensureDb() {
-  if (!fs.existsSync(DB_PATH)) {
-    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-    fs.writeFileSync(DB_PATH, JSON.stringify(DEFAULT_DB, null, 2));
+  const dbPath = getDbPath();
+  if (!fs.existsSync(dbPath)) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.writeFileSync(dbPath, JSON.stringify(DEFAULT_DB, null, 2));
   }
 }
 
 function readDb() {
   ensureDb();
-  const raw = fs.readFileSync(DB_PATH, "utf-8");
+  const raw = fs.readFileSync(getDbPath(), "utf-8");
   try {
     // merge con DEFAULT_DB para que bases de datos viejas (creadas antes de
     // agregar Curaduría de Portafolio) obtengan las colecciones nuevas como [].
@@ -31,7 +40,7 @@ function readDb() {
 }
 
 function writeDb(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  fs.writeFileSync(getDbPath(), JSON.stringify(db, null, 2));
 }
 
 // --- Products ---

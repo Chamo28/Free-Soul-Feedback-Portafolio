@@ -140,6 +140,23 @@ Herramienta para construir órdenes de compra a partir de links de proveedor (16
 
 **Importante — las fotos de este módulo NO viven en Google Sheets** (Sheets no guarda imágenes, solo texto/números). Si el servidor de Render no tiene disco persistente contratado (ver sección de despliegue más abajo), las fotos descargadas —y los pedidos que no hayas sincronizado— se pueden perder en un reinicio del servicio. Sincroniza seguido y considera el disco persistente si vas a usar este módulo para pedidos reales.
 
+## Multi-marca (white-label)
+
+La app soporta correr **la misma suite completa para varias marcas** desde un solo código — hoy Free Soul DNA y Alas de Amara ("Vuela a tu manera"), pensado para agregar más a futuro sin reescribir nada.
+
+**Cómo funciona:**
+
+- **Backend** (`server/src/brands.js`): cada marca es una entrada con su propio archivo de datos local (`db.<marca>.json`), su propia hoja de Google Sheets (`<PREFIJO>_GOOGLE_SHEET_ID` en `.env`) y su propia contraseña de admin (`<PREFIJO>_ADMIN_PASSWORD`). El frontend manda qué marca es en el header `X-Brand-Id` en cada request; un middleware (`server/src/middleware/brand.js`) la deja disponible vía `AsyncLocalStorage` para que `jsonStore.js` y `sheets.js` resuelvan solos el archivo/spreadsheet correcto — ninguna ruta necesitó cambiar su código para volverse "consciente de marca". El token de sesión (JWT) lleva la marca adentro: una sesión de una marca no puede tocar datos de otra.
+- **Frontend** (`client/src/brands.js` + `BrandContext.jsx`): cada marca define nombre, slogan, logo, favicon y una paleta de colores (como variables CSS `--brand-*`/`--sand-*` que alimentan **todas** las clases Tailwind `bg-brand-600`, `text-brand-700`, etc. ya usadas en toda la app — rebrandear es cambiar esos valores, no tocar componentes). La marca se resuelve por el prefijo de la URL (`/alas/admin`, `/alas/survey/:id`, ...) mientras las marcas compartan dominio; Free Soul (sin prefijo) sigue funcionando exactamente en las mismas rutas de siempre.
+
+**Para agregar una marca nueva:**
+
+1. Backend: agrega una entrada en `BRANDS` (`server/src/brands.js`) con sus nombres de variables de entorno, y define esas variables en `.env` (local) / Render (producción) — ver `server/.env.example`.
+2. Frontend: agrega una entrada en `BRANDS` (`client/src/brands.js`) con su `pathPrefix`, textos, logo/favicon (ponlos en `client/public/brands/<id>/`) y su paleta de colores.
+3. Listo — el resto de la app (encuestas, curaduría, resultados, pedidos) funciona sola para la marca nueva.
+
+**Despliegue separado a futuro:** hoy todas las marcas viven en el mismo dominio (mismo proyecto de Vercel/Render). Para independizar una marca con su propio dominio, se despliega el **mismo código** en un proyecto de Vercel + servicio de Render nuevos, con la variable `VITE_BRAND=<id>` fijada al buildear (ver `client/.env.example`) — esto fuerza esa marca sin necesitar ningún prefijo de ruta, y las URLs quedan limpias (`/admin` en vez de `/alas/admin`). Los datos y la hoja de Sheets de esa marca no se mueven (ya estaban separados desde el día uno).
+
 ## 8. Producción / despliegue permanente (Vercel + Render)
 
 La app ya está lista para desplegarse así: **backend en Render**, **frontend en Vercel**. Para la guía rápida (5 minutos), ver [DEPLOY.md](DEPLOY.md). Esta sección explica el detalle de cada paso y el porqué.

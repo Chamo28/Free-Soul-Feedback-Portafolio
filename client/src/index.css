@@ -4,6 +4,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Valores por defecto (marca Free Soul DNA) de las variables que alimentan
+   los colores brand y sand de Tailwind (ver tailwind.config.js). Cada marca
+   los sobreescribe en caliente vía BrandContext.jsx — esto es solo el
+   fallback antes de que corra JS, para que nunca "parpadee" el color
+   equivocado. */
+:root {
+  --brand-50: #f1f7fb;
+  --brand-100: #d2ecf9;
+  --brand-200: #a7d4ec;
+  --brand-500: #4c6d94;
+  --brand-600: #2d4568;
+  --brand-700: #1d2a43;
+  --brand-900: #141d30;
+  --sand-50: #faf7f5;
+  --sand-100: #f3ece7;
+  --sand-300: #e3d3c8;
+  --sand-500: #d4c5b9;
+  --sand-600: #b9a690;
+  --sand-700: #93816c;
+  --sand-800: #6b5a48;
+}
+
 html, body, #root {
   height: 100%;
 }
