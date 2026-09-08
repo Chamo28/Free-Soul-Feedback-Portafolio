@@ -297,7 +297,7 @@ export default function CurationEdit() {
             <textarea
               value={addImageUrls}
               onChange={(e) => setAddImageUrls(e.target.value)}
-              placeholder="Link(s) de imagen — separados por coma si son varias fotos del mismo producto"
+              placeholder="Link(s) de imagen — separados por coma si son varios colores/variantes (cada uno se crea como producto aparte)"
               rows={2}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
             />
@@ -321,8 +321,10 @@ export default function CurationEdit() {
           <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 space-y-2">
             <p className="text-sm font-medium text-slate-700">Reimportar productos</p>
             <p className="text-xs text-slate-500">
-              Un producto cuya <code>URL_Producto</code> ya existe en esta curaduría se{" "}
-              <b>actualiza</b> (nombre/fotos), conservando las respuestas ya guardadas. Una URL nueva se{" "}
+              Cada foto de una fila (<code>URL_Imagen_1</code>, <code>URL_Imagen_2</code>...) es un{" "}
+              <b>producto/color distinto a evaluar</b>, no una foto extra del mismo producto — una fila con 4 fotos
+              genera 4 productos. Una combinación (link + foto) que ya existe en esta curaduría se{" "}
+              <b>actualiza</b> (nombre/foto), conservando las respuestas ya guardadas; una combinación nueva se{" "}
               <b>agrega</b>. Nada se borra por reimportar — para quitar un producto usa su botón de eliminar.
             </p>
             <a href="/plantilla_pedidos.xlsx" download className="inline-block text-xs text-brand-600 underline">

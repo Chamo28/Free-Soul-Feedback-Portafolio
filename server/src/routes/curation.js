@@ -30,7 +30,7 @@ import {
   deleteCurationResponseRow,
 } from "../services/sheets.js";
 import { computeCurationRankings } from "../services/curationScoring.js";
-import { parseImportText } from "../services/csvParser.js";
+import { parseImportText, expandCurationItemsByImage } from "../services/csvParser.js";
 import { downloadImages } from "../services/imageDownloader.js";
 import { brandUploadsDir, brandUploadsUrlPrefix } from "../uploadsPath.js";
 import { brandContext } from "../brandContext.js";
@@ -163,10 +163,13 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "No llegó contenido para importar (pega o sube el CSV/TXT)." });
     }
 
-    const { items: parsedItems, warnings } = parseImportText(text);
-    if (parsedItems.length === 0) {
+    const { items: groupedItems, warnings } = parseImportText(text, { numberDuplicates: false });
+    if (groupedItems.length === 0) {
       return res.status(400).json({ error: "No se reconoció ningún producto en el archivo.", warnings });
     }
+    // En Curaduría cada foto de una fila es una variante/color distinto a
+    // evaluar por separado (ver comentario en expandCurationItemsByImage).
+    const parsedItems = expandCurationItemsByImage(groupedItems);
 
     const id = crypto.randomUUID();
     const surveyDir = brandUploadsDir(UPLOADS_DIR, "curation", id);
@@ -195,6 +198,7 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
         photo: photos[0],
         photos,
         productUrl: parsed.productUrl,
+        sourceImageUrl: parsed.sourceImageUrl || null,
         approvedForOrder: false,
         importedOrderIds: [],
       });
@@ -270,9 +274,12 @@ router.patch("/surveys/:id/items/:itemId", requireAdmin, (req, res) => {
   res.json(updated);
 });
 
-// Agrega UN producto suelto a una curaduría ya existente (edición) — mismo
+// Agrega producto(s) sueltos a una curaduría ya existente (edición) — mismo
 // mecanismo que import-links: se manda el link del producto y el/los link(s)
-// de foto, y el servidor los descarga y guarda igual que al crear.
+// de foto, y el servidor los descarga y guarda igual que al crear. Cada URL
+// de imagen es una variante/color distinto a evaluar por separado (mismo
+// criterio que la importación CSV/Excel, ver expandCurationItemsByImage):
+// si se pegan varias fotos, se crean varios productos, no uno con galería.
 router.post("/surveys/:id/items", requireAdmin, async (req, res) => {
   try {
     const survey = getCurationSurveyById(req.params.id);
@@ -291,27 +298,41 @@ router.post("/surveys/:id/items", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Agrega al menos una URL de imagen." });
     }
 
-    const itemId = crypto.randomUUID();
-    const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", survey.id), itemId);
-    const downloadResults = await downloadImages(images, itemDir);
-    const photos = downloadResults
-      .filter((r) => r.ok)
-      .map((r) => `/uploads/${brandUploadsUrlPrefix()}curation/${survey.id}/${itemId}/${r.filename}`);
-    if (photos.length === 0) {
-      return res.status(400).json({ error: "No se pudo descargar ninguna de las imágenes dadas." });
+    const baseName = (referencia && String(referencia).trim()) || `Producto ${survey.items.length + 1}`;
+    const cleanProductUrl = (productUrl && String(productUrl).trim()) || "";
+    let latestSurvey = survey;
+    let createdCount = 0;
+    const failedImages = [];
+
+    for (let i = 0; i < images.length; i++) {
+      const itemId = crypto.randomUUID();
+      const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", survey.id), itemId);
+      const downloadResults = await downloadImages([images[i]], itemDir);
+      const photos = downloadResults
+        .filter((r) => r.ok)
+        .map((r) => `/uploads/${brandUploadsUrlPrefix()}curation/${survey.id}/${itemId}/${r.filename}`);
+      if (photos.length === 0) {
+        failedImages.push(images[i]);
+        continue;
+      }
+      const item = {
+        id: itemId,
+        name: images.length > 1 ? `${baseName} ${i + 1}` : baseName,
+        photo: photos[0],
+        photos,
+        productUrl: cleanProductUrl,
+        sourceImageUrl: images[i],
+        approvedForOrder: false,
+        importedOrderIds: [],
+      };
+      latestSurvey = addCurationSurveyItem(survey.id, item);
+      createdCount++;
     }
 
-    const item = {
-      id: itemId,
-      name: (referencia && String(referencia).trim()) || `Producto ${survey.items.length + 1}`,
-      photo: photos[0],
-      photos,
-      productUrl: (productUrl && String(productUrl).trim()) || "",
-      approvedForOrder: false,
-      importedOrderIds: [],
-    };
-    const updated = addCurationSurveyItem(survey.id, item);
-    res.status(201).json(updated);
+    if (createdCount === 0) {
+      return res.status(400).json({ error: "No se pudo descargar ninguna de las imágenes dadas." });
+    }
+    res.status(201).json({ ...latestSurvey, failedImages });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error agregando el producto: " + err.message });
@@ -343,19 +364,34 @@ router.post("/surveys/:id/reimport", requireAdmin, async (req, res) => {
     if (!text || !String(text).trim()) {
       return res.status(400).json({ error: "No llegó contenido para importar (pega o sube el CSV/TXT)." });
     }
-    const { items: parsedItems, warnings } = parseImportText(text);
-    if (parsedItems.length === 0) {
+    const { items: groupedItems, warnings } = parseImportText(text, { numberDuplicates: false });
+    if (groupedItems.length === 0) {
       return res.status(400).json({ error: "No se reconoció ningún producto en el archivo.", warnings });
     }
+    // En Curaduría cada foto de una fila es una variante/color distinto a
+    // evaluar por separado (ver comentario en expandCurationItemsByImage).
+    const parsedItems = expandCurationItemsByImage(groupedItems);
 
     const importWarnings = [...warnings];
-    const existingByUrl = new Map(survey.items.filter((i) => i.productUrl).map((i) => [i.productUrl, i]));
+    // Emparejar por productUrl + sourceImageUrl (no solo productUrl): un
+    // mismo link de producto ahora puede tener varios items, uno por cada
+    // variante/color/foto — hace falta la combinación completa para saber
+    // cuál actualizar sin duplicar ni mezclar variantes entre sí. Items
+    // viejos sin sourceImageUrl (creados antes de este cambio) simplemente
+    // no emparejan con nada y se dejan intactos; la fila que les
+    // correspondía entra como item nuevo.
+    const existingByKey = new Map(
+      survey.items
+        .filter((i) => i.productUrl && i.sourceImageUrl)
+        .map((i) => [`${i.productUrl}||${i.sourceImageUrl}`, i])
+    );
     const nextItems = [...survey.items];
     let added = 0;
     let updated = 0;
 
     for (const parsed of parsedItems) {
-      const existing = existingByUrl.get(parsed.productUrl);
+      const key = `${parsed.productUrl}||${parsed.sourceImageUrl}`;
+      const existing = existingByKey.get(key);
       const targetId = existing ? existing.id : crypto.randomUUID();
       const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", survey.id), targetId);
       const downloadResults = parsed.images.length > 0 ? await downloadImages(parsed.images, itemDir) : [];
@@ -369,6 +405,7 @@ router.post("/surveys/:id/reimport", requireAdmin, async (req, res) => {
 
       if (existing) {
         existing.name = parsed.referencia || existing.name;
+        existing.sourceImageUrl = parsed.sourceImageUrl || existing.sourceImageUrl || null;
         if (photos.length > 0) {
           existing.photo = photos[0];
           existing.photos = photos;
@@ -387,6 +424,7 @@ router.post("/surveys/:id/reimport", requireAdmin, async (req, res) => {
           photo: photos[0],
           photos,
           productUrl: parsed.productUrl,
+          sourceImageUrl: parsed.sourceImageUrl || null,
           approvedForOrder: false,
           importedOrderIds: [],
         });

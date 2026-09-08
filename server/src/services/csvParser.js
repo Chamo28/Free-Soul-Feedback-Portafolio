@@ -60,7 +60,12 @@ function splitLine(line, delimiter) {
   return cells;
 }
 
-export function parseImportText(text) {
+// `numberDuplicates: false` se usa SOLO desde Curaduría (ver
+// expandCurationItemsByImage más abajo): ahí la numeración final se hace
+// después de "reventar" cada fila en un item por imagen, no antes — si se
+// numerara aquí también, quedaría una doble numeración ("Tennis Mujer 1 1",
+// "Tennis Mujer 1 2"...). Pedidos sigue usando el default (true).
+export function parseImportText(text, { numberDuplicates = true } = {}) {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -155,22 +160,24 @@ export function parseImportText(text) {
   // toda una línea de producto), se numeran para que sigan siendo
   // distinguibles a simple vista — si no, todas las tarjetas se ven
   // "iguales" en el texto aunque las fotos sean de productos distintos.
-  const nameCounts = new Map();
-  for (const it of items) nameCounts.set(it.referencia, (nameCounts.get(it.referencia) || 0) + 1);
-  const seenSoFar = new Map();
-  let renamedGroups = 0;
-  for (const it of items) {
-    if (nameCounts.get(it.referencia) > 1) {
-      const n = (seenSoFar.get(it.referencia) || 0) + 1;
-      seenSoFar.set(it.referencia, n);
-      if (n === 1) renamedGroups++;
-      it.referencia = `${it.referencia} ${n}`;
+  if (numberDuplicates) {
+    const nameCounts = new Map();
+    for (const it of items) nameCounts.set(it.referencia, (nameCounts.get(it.referencia) || 0) + 1);
+    const seenSoFar = new Map();
+    let renamedGroups = 0;
+    for (const it of items) {
+      if (nameCounts.get(it.referencia) > 1) {
+        const n = (seenSoFar.get(it.referencia) || 0) + 1;
+        seenSoFar.set(it.referencia, n);
+        if (n === 1) renamedGroups++;
+        it.referencia = `${it.referencia} ${n}`;
+      }
     }
-  }
-  if (renamedGroups > 0) {
-    warnings.push(
-      `${renamedGroups} nombre(s) de referencia se repetían en varias filas — se numeraron automáticamente (ej. "Tennis Mujer 1", "Tennis Mujer 2"...) para que se distingan. Puedes renombrar cada producto individualmente (por color, talla, etc.) desde la pantalla de editar.`
-    );
+    if (renamedGroups > 0) {
+      warnings.push(
+        `${renamedGroups} nombre(s) de referencia se repetían en varias filas — se numeraron automáticamente (ej. "Tennis Mujer 1", "Tennis Mujer 2"...) para que se distingan. Puedes renombrar cada producto individualmente (por color, talla, etc.) desde la pantalla de editar.`
+      );
+    }
   }
 
   const withoutImages = items.filter((it) => it.images.length === 0).length;
@@ -179,4 +186,45 @@ export function parseImportText(text) {
   }
 
   return { items, warnings };
+}
+
+// Solo para Curaduría de Portafolio (NO para Pedidos): ahí cada imagen de
+// una fila es una VARIANTE/COLOR distinto a evaluar por separado, no una
+// foto adicional del mismo producto — a diferencia de Pedidos, donde varias
+// fotos de una fila sí son del mismo artículo (carrusel de referencia).
+// Por eso esto vive aparte de parseImportText: toma su salida ya agrupada
+// (un item por URL_Producto, con todas sus imágenes) y la "revienta" en un
+// item por imagen, cada uno con una sola foto y su URL de origen
+// (`sourceImageUrl`) para poder emparejarlo en una reimportación futura.
+// Una fila sin ninguna imagen se conserva igual (1 item sin foto) para no
+// perder el aviso de "falta foto".
+export function expandCurationItemsByImage(items) {
+  const expanded = [];
+  for (const it of items) {
+    if (it.images.length === 0) {
+      expanded.push({ productUrl: it.productUrl, referencia: it.referencia, images: [], sourceImageUrl: null });
+      continue;
+    }
+    for (const imageUrl of it.images) {
+      expanded.push({ productUrl: it.productUrl, referencia: it.referencia, images: [imageUrl], sourceImageUrl: imageUrl });
+    }
+  }
+
+  // Numera duplicados de referencia sobre la lista YA expandida (se llama
+  // con parseImportText(text, { numberDuplicates: false }) para no numerar
+  // dos veces): así "Tennis Mujer" con 4 fotos en una fila pasa a "Tennis
+  // Mujer 1".."Tennis Mujer 4" en vez de numerarse por fila primero y
+  // quedar duplicado ("Tennis Mujer 1 1", "Tennis Mujer 1 2"...).
+  const nameCounts = new Map();
+  for (const it of expanded) nameCounts.set(it.referencia, (nameCounts.get(it.referencia) || 0) + 1);
+  const seenSoFar = new Map();
+  for (const it of expanded) {
+    if (nameCounts.get(it.referencia) > 1) {
+      const n = (seenSoFar.get(it.referencia) || 0) + 1;
+      seenSoFar.set(it.referencia, n);
+      it.referencia = `${it.referencia} ${n}`;
+    }
+  }
+
+  return expanded;
 }
