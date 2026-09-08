@@ -49,21 +49,22 @@ export const BRANDS = {
     loginSubtitle: "Curaduría y pedidos",
     operationsTagline: "Vuela a tu manera",
     footerTagline: "Vuela a tu manera",
-    // Placeholder (monograma "AA" sobre coral) hasta que llegue el archivo
-    // real del logo — mándalo como adjunto (PNG transparente o SVG) y se
-    // reemplaza este archivo sin tocar nada más.
-    logo: "/brands/alas-de-amara/icon.svg",
-    favicon: "/brands/alas-de-amara/favicon.svg",
+    // Logo real (client/public/brands/alas-de-amara/): "icon.png" es el
+    // emblema de las alas recortado del logo (para los círculos chicos de
+    // Navbar/header — el logo original es un cuadrado con el nombre de la
+    // marca ya escrito, se ve mal reducido a 36px). "logo-full.png" es el
+    // archivo completo, guardado por si se necesita en algo grande a futuro.
+    logo: "/brands/alas-de-amara/icon.png",
+    favicon: "/brands/alas-de-amara/icon.png",
     colors: {
-      // Paleta coral/salmón leída del logo compartido — son valores
-      // aproximados, fáciles de afinar apenas haya guía de marca exacta.
-      "--brand-50": "#fdf3f2",
-      "--brand-100": "#fbe2df",
-      "--brand-200": "#f4bab4",
-      "--brand-500": "#ea8681",
-      "--brand-600": "#e27670",
-      "--brand-700": "#c85f59",
-      "--brand-900": "#7d3a36",
+      // Paleta derivada del color exacto de fondo del logo real (#f47878).
+      "--brand-50": "#fef4f4",
+      "--brand-100": "#fde7e7",
+      "--brand-200": "#fbd0d0",
+      "--brand-500": "#f7a1a1",
+      "--brand-600": "#f47878",
+      "--brand-700": "#c36060",
+      "--brand-900": "#864242",
       "--sand-50": "#fffaf5",
       "--sand-100": "#fdeee1",
       "--sand-300": "#f6d2b3",
