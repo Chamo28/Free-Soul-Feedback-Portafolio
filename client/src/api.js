@@ -15,6 +15,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Si el token expiró o quedó inválido (el backend responde 401), se limpia
+// la sesión y se manda a login con un aviso — antes esto quedaba en
+// silencio: una acción (ej. "Crear pedido") fallaba sin ningún mensaje y
+// parecía que el botón simplemente no hacía nada.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && localStorage.getItem("admin_token")) {
+      localStorage.removeItem("admin_token");
+      if (!window.location.pathname.startsWith("/admin/login")) {
+        window.location.href = "/admin/login?expirada=1";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Las fotos vienen del backend como rutas relativas (/uploads/...). En
 // desarrollo eso basta (proxy de Vite); en producción hay que anteponerles
 // el dominio del backend para que el navegador las cargue desde ahí.

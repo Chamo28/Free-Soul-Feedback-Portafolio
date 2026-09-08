@@ -9,6 +9,7 @@ export default function PurchaseOrdersList() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const navigate = useNavigate();
 
   const load = () => {
@@ -24,9 +25,15 @@ export default function PurchaseOrdersList() {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
+    setCreateError("");
     try {
       const order = await createPurchaseOrder(newName.trim());
       navigate(`/admin/pedidos/${order.id}`);
+    } catch (err) {
+      setCreateError(
+        err.response?.data?.error ||
+          "No se pudo crear el pedido. Si el servidor estaba inactivo puede tardar unos segundos en despertar — intenta de nuevo."
+      );
     } finally {
       setCreating(false);
     }
@@ -62,6 +69,7 @@ export default function PurchaseOrdersList() {
             {creating ? "Creando..." : "+ Nuevo pedido"}
           </button>
         </form>
+        {createError && <p className="text-sm text-red-600 -mt-4 mb-4">{createError}</p>}
 
         {loading && <p className="text-slate-500">Cargando...</p>}
 
