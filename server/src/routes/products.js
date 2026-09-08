@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { requireAdmin } from "../middleware/auth.js";
 import { getProducts, getProductById, addProduct, updateProduct, deleteProduct } from "../jsonStore.js";
 import { brandUploadsDir, brandUploadsUrlPrefix } from "../uploadsPath.js";
+import { brandContext } from "../brandContext.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // UPLOADS_DIR permite apuntar a un disco persistente en producción (ver README).
@@ -40,7 +41,17 @@ router.get("/:id", (req, res) => {
   res.json(product);
 });
 
-router.post("/", requireAdmin, upload.array("photos", 7), async (req, res) => {
+// req.brand ya lo fijó el middleware withBrand ANTES de multer (leyendo el
+// header X-Brand-Id de forma síncrona, así que es 100% confiable). Pero
+// multer procesa los archivos por streams internamente y en producción se
+// ha visto que eso puede "perder" el contexto de AsyncLocalStorage que usan
+// jsonStore.js/uploadsPath.js — resultado: el producto terminaba guardado
+// en la marca por defecto (Free Soul) sin importar qué marca mandara el
+// admin. Por eso se vuelve a fijar el contexto explícitamente con
+// brandContext.run(req.brand, ...) apenas termina multer, antes de tocar
+// cualquier dato — dentro de este bloque currentBrand() ya es confiable.
+router.post("/", requireAdmin, upload.array("photos", 7), (req, res) =>
+  brandContext.run(req.brand, async () => {
   try {
     const { name, category, instructions } = req.body;
     if (!name || !category) {
@@ -81,7 +92,8 @@ router.post("/", requireAdmin, upload.array("photos", 7), async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Error subiendo el producto: " + err.message });
   }
-});
+  })
+);
 
 router.patch("/:id", requireAdmin, (req, res) => {
   const product = getProductById(req.params.id);

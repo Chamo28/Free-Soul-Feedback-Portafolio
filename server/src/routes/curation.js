@@ -30,6 +30,7 @@ import { computeCurationRankings } from "../services/curationScoring.js";
 import { parseImportText } from "../services/csvParser.js";
 import { downloadImages } from "../services/imageDownloader.js";
 import { brandUploadsDir, brandUploadsUrlPrefix } from "../uploadsPath.js";
+import { brandContext } from "../brandContext.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // UPLOADS_DIR permite apuntar a un disco persistente en producción (ver README).
@@ -56,7 +57,18 @@ router.get("/surveys/:id", (req, res) => {
   res.json(survey);
 });
 
-router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, res) => {
+// req.brand ya lo fijó el middleware withBrand ANTES de multer (leyendo el
+// header X-Brand-Id de forma síncrona, así que es 100% confiable). Pero
+// multer procesa los archivos por streams internamente y en producción se
+// ha visto que eso puede "perder" el contexto de AsyncLocalStorage que usan
+// jsonStore.js/uploadsPath.js — resultado: la curaduría/foto terminaba
+// guardada en la marca por defecto (Free Soul) sin importar qué marca
+// mandara el admin. Por eso se vuelve a fijar el contexto explícitamente
+// con brandContext.run(req.brand, ...) apenas termina multer, antes de
+// tocar cualquier dato — dentro de este bloque currentBrand() ya es
+// confiable de nuevo.
+router.post("/surveys", requireAdmin, upload.array("photos", 40), (req, res) =>
+  brandContext.run(req.brand, async () => {
   try {
     const { name, category, selectionMode, selectionCount, instructions } = req.body;
     let names = [];
@@ -125,7 +137,8 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), async (req, re
     console.error(err);
     res.status(500).json({ error: "Error creando la curaduría: " + err.message });
   }
-});
+  })
+);
 
 // Crea una curaduría a partir de un CSV/TXT de links (mismo formato e idea
 // que la importación de Pedidos): una fila por imagen, agrupadas por URL de
