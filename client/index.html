@@ -8,6 +8,18 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>Free Soul DNA · Feedback</title>
+    <!-- Estas etiquetas OG/Twitter son las que leen WhatsApp/Facebook/etc.
+         al armar la vista previa de un link — NO ejecutan el JS de la app
+         (BrandContext.jsx solo cambia el favicon del tab ya cargado), así
+         que tienen que venir fijas en el HTML estático. Por eso Alas de
+         Amara tiene su propio archivo (alas.html, mismo bundle/JS, solo
+         cambia este shell) — ver vercel.json. -->
+    <meta property="og:title" content="Free Soul DNA · Feedback" />
+    <meta property="og:description" content="Curaduría de portafolio y encuestas de producto." />
+    <meta property="og:image" content="https://free-soul-feedback-portafolio.vercel.app/icon-512.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content="https://free-soul-feedback-portafolio.vercel.app/icon-512.png" />
   </head>
   <body>
     <div id="root"></div>
