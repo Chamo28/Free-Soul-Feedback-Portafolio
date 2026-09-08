@@ -6,6 +6,7 @@ import {
   getCurationSurvey,
   updateCurationSurvey,
   addCurationSurveyItem,
+  updateCurationSurveyItem,
   deleteCurationSurveyItem,
   reimportCurationSurvey,
   getCategories,
@@ -94,6 +95,17 @@ export default function CurationEdit() {
     } finally {
       setAdding(false);
     }
+  };
+
+  const handleRenameItem = async (itemId, newName) => {
+    const trimmed = newName.trim();
+    const current = survey.items.find((it) => it.id === itemId);
+    if (!trimmed || trimmed === current?.name) return;
+    setSurvey((prev) => ({
+      ...prev,
+      items: prev.items.map((it) => (it.id === itemId ? { ...it, name: trimmed } : it)),
+    }));
+    await updateCurationSurveyItem(id, itemId, { name: trimmed });
   };
 
   const handleDeleteItem = async (itemId, name) => {
@@ -360,9 +372,13 @@ export default function CurationEdit() {
                 className="aspect-square object-cover cursor-zoom-in hover:opacity-80"
               />
               <div className="p-2 flex flex-col gap-1">
-                <p className="text-xs font-medium text-slate-800 truncate" title={item.name}>
-                  {item.name}
-                </p>
+                <input
+                  key={item.name}
+                  defaultValue={item.name}
+                  onBlur={(e) => handleRenameItem(item.id, e.target.value)}
+                  title="Nombre del producto (ej. agrégale el color para distinguirlo)"
+                  className="text-xs font-medium text-slate-800 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1 py-0.5 -mx-1 w-full"
+                />
                 {item.productUrl && (
                   <a
                     href={item.productUrl}

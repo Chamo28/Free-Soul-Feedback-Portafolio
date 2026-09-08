@@ -150,6 +150,29 @@ export function parseImportText(text) {
     images: g.images,
   }));
 
+  // Si varias filas traen la MISMA referencia (típico cuando se llena la
+  // misma celda para todos, ej. "Tennis Mujer" repetido en cada fila para
+  // toda una línea de producto), se numeran para que sigan siendo
+  // distinguibles a simple vista — si no, todas las tarjetas se ven
+  // "iguales" en el texto aunque las fotos sean de productos distintos.
+  const nameCounts = new Map();
+  for (const it of items) nameCounts.set(it.referencia, (nameCounts.get(it.referencia) || 0) + 1);
+  const seenSoFar = new Map();
+  let renamedGroups = 0;
+  for (const it of items) {
+    if (nameCounts.get(it.referencia) > 1) {
+      const n = (seenSoFar.get(it.referencia) || 0) + 1;
+      seenSoFar.set(it.referencia, n);
+      if (n === 1) renamedGroups++;
+      it.referencia = `${it.referencia} ${n}`;
+    }
+  }
+  if (renamedGroups > 0) {
+    warnings.push(
+      `${renamedGroups} nombre(s) de referencia se repetían en varias filas — se numeraron automáticamente (ej. "Tennis Mujer 1", "Tennis Mujer 2"...) para que se distingan. Puedes renombrar cada producto individualmente (por color, talla, etc.) desde la pantalla de editar.`
+    );
+  }
+
   const withoutImages = items.filter((it) => it.images.length === 0).length;
   if (withoutImages > 0) {
     warnings.push(`${withoutImages} producto(s) no tienen ninguna imagen asociada.`);
