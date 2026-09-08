@@ -10,20 +10,20 @@ function CoverCollage({ photos, icon, gradientClass }) {
   const shown = photos.slice(0, 4);
   if (shown.length === 0) {
     return (
-      <div className={`h-36 sm:h-44 flex items-center justify-center text-6xl ${gradientClass}`}>
+      <div className={`h-16 sm:h-20 flex items-center justify-center text-3xl ${gradientClass}`}>
         <span className="drop-shadow-sm">{icon}</span>
       </div>
     );
   }
   return (
-    <div className={`relative h-36 sm:h-44 overflow-hidden ${gradientClass}`}>
+    <div className={`relative h-16 sm:h-20 overflow-hidden ${gradientClass}`}>
       <div className={`absolute inset-0 grid ${shown.length === 1 ? "grid-cols-1" : "grid-cols-2"} grid-rows-2 gap-0.5`}>
         {shown.map((src, i) => (
           <img key={i} src={src} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
         ))}
       </div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent" />
-      <span className="absolute bottom-2 right-3 text-4xl drop-shadow-lg">{icon}</span>
+      <span className="absolute bottom-1 right-1.5 text-lg drop-shadow-lg">{icon}</span>
     </div>
   );
 }
@@ -31,7 +31,7 @@ function CoverCollage({ photos, icon, gradientClass }) {
 function ModuleCard({ to, icon, gradientClass, photos, title, subtitle, disabled, badge }) {
   const body = (
     <div
-      className={`h-full bg-white rounded-2xl border-2 shadow-sm overflow-hidden flex flex-col transition-all duration-200 ${
+      className={`h-full bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col transition-all duration-200 ${
         disabled
           ? "border-slate-200 opacity-75"
           : "border-transparent hover:shadow-lg hover:-translate-y-0.5 hover:scale-[1.01] hover:border-brand-700 active:scale-[0.99] cursor-pointer"
@@ -40,16 +40,16 @@ function ModuleCard({ to, icon, gradientClass, photos, title, subtitle, disabled
       <div className="relative">
         <CoverCollage photos={photos} icon={icon} gradientClass={gradientClass} />
         {badge && (
-          <span className="absolute top-3 right-3 bg-sand-500 text-brand-900 text-[11px] font-bold tracking-wide px-2.5 py-1 rounded-full shadow">
+          <span className="absolute top-1.5 right-1.5 bg-sand-500 text-brand-900 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-full shadow">
             {badge}
           </span>
         )}
       </div>
-      <div className="p-4 sm:p-5 flex-1 flex flex-col gap-1">
-        <h3 className="font-display font-bold text-slate-800 text-base sm:text-lg leading-snug">{title}</h3>
-        <p className="text-sm text-slate-500 leading-snug">{subtitle}</p>
+      <div className="p-2 sm:p-2.5 flex-1 flex flex-col gap-0.5">
+        <h3 className="font-display font-bold text-slate-800 text-xs sm:text-sm leading-snug">{title}</h3>
+        <p className="text-[11px] text-slate-500 leading-snug">{subtitle}</p>
         {!disabled && (
-          <span className="mt-2 text-sm font-semibold text-brand-700 inline-flex items-center gap-1">
+          <span className="mt-1 text-[11px] font-semibold text-brand-700 inline-flex items-center gap-1">
             Entrar <span aria-hidden>→</span>
           </span>
         )}
@@ -109,23 +109,23 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
+      <header className="bg-brand-700 shadow-md">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/icon-512.png" alt="Free Soul DNA" className="h-11 w-11 rounded-full flex-shrink-0" />
             <div className="min-w-0">
-              <p className="font-display font-bold text-brand-700 text-lg leading-tight truncate">Free Soul DNA</p>
-              <p className="text-xs text-slate-500 -mt-0.5">Operations Suite</p>
+              <p className="font-display font-bold text-white text-lg leading-tight truncate">Free Soul DNA</p>
+              <p className="text-xs text-brand-100/80 -mt-0.5">Operations Suite</p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             {status && (
               <span
                 className={`text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 whitespace-nowrap ${
-                  status.configured ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500"
+                  status.configured ? "bg-green-50 text-green-700" : "bg-white/10 text-white/80"
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${status.configured ? "bg-green-500" : "bg-slate-400"}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${status.configured ? "bg-green-500" : "bg-white/50"}`} />
                 <span className="hidden sm:inline">{status.configured ? "Servidor conectado" : "Sheets no configurado"}</span>
                 <span className="sm:hidden">{status.configured ? "Conectado" : "Sin config."}</span>
               </span>
@@ -135,7 +135,7 @@ export default function Home() {
                 adminLogout();
                 navigate("/admin/login");
               }}
-              className="text-sm text-slate-500 hover:text-slate-700 font-medium"
+              className="text-sm text-white/70 hover:text-white font-medium"
             >
               Salir
             </button>
@@ -151,7 +151,7 @@ export default function Home() {
           <p className="text-slate-500 mt-1">Elige un módulo para empezar a trabajar.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 max-w-3xl">
           <ModuleCard
             to="/admin/curaduria"
             icon="📊"
