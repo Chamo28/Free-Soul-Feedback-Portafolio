@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { getCategories, createProduct } from "../api.js";
 import { compressImageFiles } from "../utils/compressImage.js";
 import Navbar from "../components/Navbar.jsx";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function ProductForm() {
+  const brand = useBrand();
   const [categories, setCategories] = useState([]);
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -55,7 +57,7 @@ export default function ProductForm() {
       fd.append("instructions", instructions.trim());
       files.forEach((f) => fd.append("photos", f));
       const product = await createProduct(fd);
-      setCreatedLink(`${window.location.origin}/survey/${product.id}`);
+      setCreatedLink(`${window.location.origin}${brand.pathPrefix}/survey/${product.id}`);
     } catch (err) {
       setError(err.response?.data?.error || "Error subiendo el producto.");
     } finally {

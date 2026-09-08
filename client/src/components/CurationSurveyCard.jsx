@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { deleteCurationSurvey, updateCurationSurvey } from "../api.js";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function CurationSurveyCard({ survey, onDeleted }) {
+  const brand = useBrand();
   const [copied, setCopied] = useState(false);
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [instructions, setInstructions] = useState(survey.instructions || "");
@@ -39,7 +41,7 @@ export default function CurationSurveyCard({ survey, onDeleted }) {
   };
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${surveyPath}`;
+    const url = `${window.location.origin}${brand.pathPrefix}${surveyPath}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);

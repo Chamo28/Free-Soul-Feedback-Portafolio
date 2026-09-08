@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { deleteProduct, updateProduct } from "../api.js";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function ProductCard({ product, onDeleted }) {
+  const brand = useBrand();
   const [copied, setCopied] = useState(false);
   const [editingInstructions, setEditingInstructions] = useState(false);
   const [instructions, setInstructions] = useState(product.instructions || "");
@@ -13,7 +15,7 @@ export default function ProductCard({ product, onDeleted }) {
   const surveyPath = `/survey/${product.id}`;
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${surveyPath}`;
+    const url = `${window.location.origin}${brand.pathPrefix}${surveyPath}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);

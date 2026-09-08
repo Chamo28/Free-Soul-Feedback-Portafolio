@@ -4,8 +4,10 @@ import { getCategories, createCurationSurvey, createCurationSurveyFromLinks } fr
 import { compressImageFiles } from "../utils/compressImage.js";
 import { readImportFile } from "../utils/readImportFile.js";
 import Navbar from "../components/Navbar.jsx";
+import { useBrand } from "../BrandContext.jsx";
 
 export default function CurationForm() {
+  const brand = useBrand();
   const [sourceMode, setSourceMode] = useState("upload"); // "upload" (fotos manuales) | "links" (CSV/TXT como Pedidos)
   const [categories, setCategories] = useState([]);
   const [name, setName] = useState("");
@@ -87,7 +89,7 @@ export default function CurationForm() {
           text: importText,
         });
         setImportWarnings(survey.importWarnings || []);
-        setCreatedLink(`${window.location.origin}/curacion/${survey.id}`);
+        setCreatedLink(`${window.location.origin}${brand.pathPrefix}/curacion/${survey.id}`);
       } catch (err) {
         setError(err.response?.data?.error || "Error creando la curaduría desde links.");
       } finally {
@@ -116,7 +118,7 @@ export default function CurationForm() {
       fd.append("names", JSON.stringify(itemNames));
       files.forEach((f) => fd.append("photos", f));
       const survey = await createCurationSurvey(fd);
-      setCreatedLink(`${window.location.origin}/curacion/${survey.id}`);
+      setCreatedLink(`${window.location.origin}${brand.pathPrefix}/curacion/${survey.id}`);
     } catch (err) {
       setError(err.response?.data?.error || "Error creando la curaduría.");
     } finally {
