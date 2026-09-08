@@ -110,6 +110,15 @@ export default function CurationSurveyCard({ survey, onDeleted }) {
           <p className="text-xs text-slate-500">
             {survey.category} · {survey.items.length} productos · {mode === "exact" ? "exactamente" : "máximo"} {count}
           </p>
+          {survey.status && survey.status !== "activa" && (
+            <span
+              className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                survey.status === "inactiva" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {survey.status === "inactiva" ? "Inactiva" : "Borrador"}
+            </span>
+          )}
         </div>
         {editingInstructions ? (
           <div className="border border-amber-300 bg-amber-50 rounded-lg p-2">
@@ -165,6 +174,12 @@ export default function CurationSurveyCard({ survey, onDeleted }) {
             {copied ? "¡Copiado!" : "Copiar link evaluador"}
           </button>
           <div className="flex gap-1.5">
+            <Link
+              to={`/admin/curaduria/${survey.id}/editar`}
+              className="flex-1 text-center text-sm border border-slate-200 rounded-lg py-1.5 text-slate-600"
+            >
+              ✏️ Editar
+            </Link>
             <Link
               to={surveyPath}
               target="_blank"

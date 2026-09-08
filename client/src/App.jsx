@@ -6,6 +6,7 @@ import Home from "./pages/Home.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import ProductForm from "./pages/ProductForm.jsx";
 import CurationForm from "./pages/CurationForm.jsx";
+import CurationEdit from "./pages/CurationEdit.jsx";
 import Results from "./pages/Results.jsx";
 import Survey from "./pages/Survey.jsx";
 import Curation from "./pages/Curation.jsx";
@@ -53,6 +54,14 @@ export default function App() {
         element={
           <RequireAdmin>
             <CurationForm />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/curaduria/:id/editar"
+        element={
+          <RequireAdmin>
+            <CurationEdit />
           </RequireAdmin>
         }
       />

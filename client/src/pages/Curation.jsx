@@ -107,6 +107,21 @@ export default function Curation() {
     );
   }
 
+  if (survey.status && survey.status !== "activa") {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <EvaluatorHeader subtitle="Curaduría de Portafolio" />
+        <div className="flex items-center justify-center px-4 pt-16 text-center">
+          <p className="text-slate-500">
+            {survey.status === "borrador"
+              ? "Esta curaduría todavía no está lista para responder."
+              : "Esta curaduría no está activa en este momento."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (step === "intro") {
     return (
       <div className="min-h-screen bg-slate-50">

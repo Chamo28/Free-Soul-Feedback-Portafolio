@@ -12,6 +12,9 @@ import {
   addCurationSurvey,
   updateCurationSurvey,
   updateCurationSurveyItem,
+  addCurationSurveyItem,
+  setCurationSurveyItems,
+  deleteCurationSurveyItem,
   deleteCurationSurvey,
   addCurationResponse,
   getCurationResponses,
@@ -128,6 +131,7 @@ router.post("/surveys", requireAdmin, upload.array("photos", 40), (req, res) =>
       category,
       instructions: (instructions && String(instructions).trim()) || "",
       selectionRule: { mode, count },
+      status: "activa",
       items,
       createdAt: new Date().toISOString(),
     };
@@ -212,6 +216,7 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
       category,
       instructions: (instructions && String(instructions).trim()) || "",
       selectionRule: { mode, count },
+      status: "activa",
       items,
       createdAt: new Date().toISOString(),
     };
@@ -223,12 +228,31 @@ router.post("/surveys/import-links", requireAdmin, async (req, res) => {
   }
 });
 
+// Edición de los parámetros de la encuesta: título, instrucciones,
+// categoría, regla de selección (modo/cantidad) y estado (activa/inactiva/
+// borrador). Ninguno de estos campos toca los items ni las respuestas ya
+// guardadas — se puede, por ejemplo, bajar de Top 15 a Top 10 sin perder el
+// historial de evaluadores (solo cambia cuántos debe elegir un evaluador
+// NUEVO de ahora en adelante).
 router.patch("/surveys/:id", requireAdmin, (req, res) => {
   const survey = getCurationSurveyById(req.params.id);
   if (!survey) return res.status(404).json({ error: "Encuesta no encontrada." });
   const patch = {};
   if (typeof req.body.instructions === "string") patch.instructions = req.body.instructions.trim();
   if (typeof req.body.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
+  if (typeof req.body.category === "string" && req.body.category.trim()) patch.category = req.body.category.trim();
+  if (req.body.selectionMode != null || req.body.selectionCount != null) {
+    const mode =
+      req.body.selectionMode === "max" ? "max" : req.body.selectionMode === "exact" ? "exact" : survey.selectionRule.mode;
+    const count = req.body.selectionCount != null ? Number(req.body.selectionCount) : survey.selectionRule.count;
+    if (!Number.isInteger(count) || count < 1) {
+      return res.status(400).json({ error: "La cantidad a seleccionar debe ser un número entero mayor a 0." });
+    }
+    patch.selectionRule = { mode, count };
+  }
+  if (typeof req.body.status === "string" && ["activa", "inactiva", "borrador"].includes(req.body.status)) {
+    patch.status = req.body.status;
+  }
   const updated = updateCurationSurvey(req.params.id, patch);
   res.json(updated);
 });
@@ -244,6 +268,138 @@ router.patch("/surveys/:id/items/:itemId", requireAdmin, (req, res) => {
   const updated = updateCurationSurveyItem(req.params.id, req.params.itemId, patch);
   if (!updated) return res.status(404).json({ error: "Producto no encontrado en esta encuesta." });
   res.json(updated);
+});
+
+// Agrega UN producto suelto a una curaduría ya existente (edición) — mismo
+// mecanismo que import-links: se manda el link del producto y el/los link(s)
+// de foto, y el servidor los descarga y guarda igual que al crear.
+router.post("/surveys/:id/items", requireAdmin, async (req, res) => {
+  try {
+    const survey = getCurationSurveyById(req.params.id);
+    if (!survey) return res.status(404).json({ error: "Encuesta no encontrada." });
+
+    const { productUrl, referencia, imageUrls } = req.body || {};
+    const images = Array.isArray(imageUrls)
+      ? imageUrls.map((u) => String(u).trim()).filter(Boolean)
+      : typeof imageUrls === "string"
+        ? imageUrls
+            .split(",")
+            .map((u) => u.trim())
+            .filter(Boolean)
+        : [];
+    if (images.length === 0) {
+      return res.status(400).json({ error: "Agrega al menos una URL de imagen." });
+    }
+
+    const itemId = crypto.randomUUID();
+    const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", survey.id), itemId);
+    const downloadResults = await downloadImages(images, itemDir);
+    const photos = downloadResults
+      .filter((r) => r.ok)
+      .map((r) => `/uploads/${brandUploadsUrlPrefix()}curation/${survey.id}/${itemId}/${r.filename}`);
+    if (photos.length === 0) {
+      return res.status(400).json({ error: "No se pudo descargar ninguna de las imágenes dadas." });
+    }
+
+    const item = {
+      id: itemId,
+      name: (referencia && String(referencia).trim()) || `Producto ${survey.items.length + 1}`,
+      photo: photos[0],
+      photos,
+      productUrl: (productUrl && String(productUrl).trim()) || "",
+      approvedForOrder: false,
+      importedOrderIds: [],
+    };
+    const updated = addCurationSurveyItem(survey.id, item);
+    res.status(201).json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error agregando el producto: " + err.message });
+  }
+});
+
+// Quita UN producto de la curaduría. No afecta respuestas ya registradas
+// (ver comentario en jsonStore.deleteCurationSurveyItem).
+router.delete("/surveys/:id/items/:itemId", requireAdmin, (req, res) => {
+  const ok = deleteCurationSurveyItem(req.params.id, req.params.itemId);
+  if (!ok) return res.status(404).json({ error: "Producto no encontrado en esta encuesta." });
+  const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", req.params.id), req.params.itemId);
+  fs.rm(itemDir, { recursive: true, force: true }, () => {});
+  res.json({ ok: true });
+});
+
+// Reimporta un CSV/TXT sobre una curaduría YA existente: fusiona en vez de
+// reemplazar — un producto cuya URL_Producto ya existe en la encuesta se
+// ACTUALIZA (nombre/fotos) conservando su id original (así ninguna respuesta
+// ya guardada queda "huérfana"); una URL_Producto nueva se agrega como
+// producto nuevo. Ningún producto existente se borra por reimportar — para
+// quitar uno se usa el botón de eliminar puntual.
+router.post("/surveys/:id/reimport", requireAdmin, async (req, res) => {
+  try {
+    const survey = getCurationSurveyById(req.params.id);
+    if (!survey) return res.status(404).json({ error: "Encuesta no encontrada." });
+
+    const { text } = req.body || {};
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ error: "No llegó contenido para importar (pega o sube el CSV/TXT)." });
+    }
+    const { items: parsedItems, warnings } = parseImportText(text);
+    if (parsedItems.length === 0) {
+      return res.status(400).json({ error: "No se reconoció ningún producto en el archivo.", warnings });
+    }
+
+    const importWarnings = [...warnings];
+    const existingByUrl = new Map(survey.items.filter((i) => i.productUrl).map((i) => [i.productUrl, i]));
+    const nextItems = [...survey.items];
+    let added = 0;
+    let updated = 0;
+
+    for (const parsed of parsedItems) {
+      const existing = existingByUrl.get(parsed.productUrl);
+      const targetId = existing ? existing.id : crypto.randomUUID();
+      const itemDir = path.join(brandUploadsDir(UPLOADS_DIR, "curation", survey.id), targetId);
+      const downloadResults = parsed.images.length > 0 ? await downloadImages(parsed.images, itemDir) : [];
+      const photos = downloadResults
+        .filter((r) => r.ok)
+        .map((r) => `/uploads/${brandUploadsUrlPrefix()}curation/${survey.id}/${targetId}/${r.filename}`);
+      const failed = downloadResults.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        importWarnings.push(`"${parsed.referencia}": ${failed.length} foto(s) no se pudieron descargar.`);
+      }
+
+      if (existing) {
+        existing.name = parsed.referencia || existing.name;
+        if (photos.length > 0) {
+          existing.photo = photos[0];
+          existing.photos = photos;
+        } else {
+          importWarnings.push(`"${parsed.referencia}": no se pudo actualizar la foto, se dejó la anterior.`);
+        }
+        updated++;
+      } else {
+        if (photos.length === 0) {
+          importWarnings.push(`"${parsed.referencia}": sin ninguna foto válida, se omite.`);
+          continue;
+        }
+        nextItems.push({
+          id: targetId,
+          name: parsed.referencia,
+          photo: photos[0],
+          photos,
+          productUrl: parsed.productUrl,
+          approvedForOrder: false,
+          importedOrderIds: [],
+        });
+        added++;
+      }
+    }
+
+    const updatedSurvey = setCurationSurveyItems(survey.id, nextItems);
+    res.json({ ...updatedSurvey, importWarnings, added, updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error reimportando el archivo: " + err.message });
+  }
 });
 
 router.delete("/surveys/:id", requireAdmin, (req, res) => {
@@ -262,6 +418,11 @@ router.post("/responses", async (req, res) => {
 
   const survey = getCurationSurveyById(surveyId);
   if (!survey) return res.status(404).json({ error: "Encuesta de curaduría no encontrada." });
+  // Encuestas viejas no tienen "status" (se crearon antes de que existiera
+  // esta funcionalidad) — sin el campo se tratan como activas, de toda la vida.
+  if (survey.status && survey.status !== "activa") {
+    return res.status(403).json({ error: "Esta curaduría no está activa en este momento." });
+  }
 
   if (!Array.isArray(selectedProductIds) || selectedProductIds.length === 0) {
     return res.status(400).json({ error: "Debes seleccionar productos." });

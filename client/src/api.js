@@ -180,6 +180,27 @@ export async function updateCurationSurvey(id, patch) {
   return data;
 }
 
+// Agrega un producto suelto a una curaduría ya existente. payload:
+// { productUrl, referencia, imageUrls } — imageUrls es un string separado
+// por comas o un array de URLs.
+export async function addCurationSurveyItem(surveyId, payload) {
+  const { data } = await api.post(`/curation/surveys/${surveyId}/items`, payload);
+  return withResolvedCurationSurvey(data);
+}
+
+export async function deleteCurationSurveyItem(surveyId, itemId) {
+  const { data } = await api.delete(`/curation/surveys/${surveyId}/items/${itemId}`);
+  return data;
+}
+
+// Reimporta un CSV/TXT sobre una curaduría existente: actualiza los
+// productos cuya URL_Producto ya existía (conservando su id) y agrega los
+// que sean nuevos — nunca borra nada (ver comentario en el backend).
+export async function reimportCurationSurvey(surveyId, text) {
+  const { data } = await api.post(`/curation/surveys/${surveyId}/reimport`, { text });
+  return withResolvedCurationSurvey(data);
+}
+
 export async function submitCurationResponse(payload) {
   const { data } = await api.post("/curation/responses", payload);
   return data;

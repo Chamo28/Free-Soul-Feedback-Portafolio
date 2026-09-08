@@ -159,6 +159,42 @@ export function updateCurationSurveyItem(surveyId, itemId, patch) {
   return item;
 }
 
+// Agrega un producto nuevo al final de una curaduría existente (edición).
+export function addCurationSurveyItem(surveyId, item) {
+  const db = readDb();
+  const survey = db.curationSurveys.find((s) => s.id === surveyId);
+  if (!survey) return null;
+  survey.items.push(item);
+  writeDb(db);
+  return survey;
+}
+
+// Reemplaza el array de items completo (usado por la reimportación desde
+// CSV/TXT, que fusiona/actualiza en memoria y aquí solo persiste el
+// resultado final).
+export function setCurationSurveyItems(surveyId, items) {
+  const db = readDb();
+  const survey = db.curationSurveys.find((s) => s.id === surveyId);
+  if (!survey) return null;
+  survey.items = items;
+  writeDb(db);
+  return survey;
+}
+
+// Quita UN producto de una curaduría existente (edición manual). No toca
+// las respuestas ya guardadas — si algún evaluador ya lo habia seleccionado,
+// esa respuesta historica simplemente deja de mostrar ese item puntual, sin
+// romper el resto de su seleccion.
+export function deleteCurationSurveyItem(surveyId, itemId) {
+  const db = readDb();
+  const survey = db.curationSurveys.find((s) => s.id === surveyId);
+  if (!survey) return false;
+  const before = survey.items.length;
+  survey.items = survey.items.filter((i) => i.id !== itemId);
+  writeDb(db);
+  return survey.items.length < before;
+}
+
 // --- Curation responses ---
 export function getCurationResponses() {
   return readDb().curationResponses;
