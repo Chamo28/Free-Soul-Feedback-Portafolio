@@ -55,9 +55,11 @@ router.get("/", requireAdmin, (_req, res) => {
 });
 
 // Sube un lote de fotos locales: cada una se parsea por nombre, se sube a
-// Cloudinary en una carpeta de la marca activa (nunca al disco de Render) y
-// se registra como variante nueva — códigos que ya existen se saltan (no se
-// re-suben ni se duplican). Igual que en curation.js: multer procesa los
+// Cloudinary en una carpeta de la marca activa (nunca al disco de Render).
+// Un código que YA existe (ej. volver a soltar "A1.jpg") no se salta ni se
+// duplica: SOBREESCRIBE la foto de esa variante (conserva su id/aprobado/
+// cantidad/nombre — solo cambia photoUrl/photoPublicId), y la foto vieja se
+// borra de Cloudinary. Igual que en curation.js: multer procesa los
 // archivos por streams y en producción se ha visto que eso "pierde" el
 // contexto de AsyncLocalStorage que usan jsonStore.js/cloudinary.js, así que
 // se vuelve a fijar explícitamente con brandContext.run(req.brand, ...) apenas
@@ -74,14 +76,14 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
         return res.status(400).json({ error: "No llegó ninguna foto." });
       }
 
-      const existingCodes = new Set(getSkuGalleryVariants().map((v) => v.code.toLowerCase()));
+      const existingByCode = new Map(getSkuGalleryVariants().map((v) => [v.code.toLowerCase(), v]));
       const unrecognized = [];
-      const duplicates = [];
       const uploadFailures = [];
 
-      // Filtra de entrada lo que no hace falta subir a Cloudinary (nombre no
-      // reconocido, código ya existente) — solo las fotos que SÍ se van a
-      // subir pasan al pool de concurrencia de abajo.
+      // Todo lo que SÍ tiene nombre reconocible se sube — ya sea foto nueva o
+      // reemplazo de una existente (se decide después de subir, comparando
+      // contra existingByCode). Lo único que se descarta antes de subir es
+      // lo que no matchea el patrón LETRA+NÚMERO.
       const toUpload = [];
       for (const file of files) {
         const parsed = parseSkuFilename(file.originalname);
@@ -89,11 +91,6 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
           unrecognized.push(file.originalname);
           continue;
         }
-        if (existingCodes.has(parsed.code.toLowerCase())) {
-          duplicates.push(parsed.code);
-          continue;
-        }
-        existingCodes.add(parsed.code.toLowerCase()); // evita duplicados dentro del mismo lote
         toUpload.push({ file, parsed });
       }
 
@@ -115,30 +112,58 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
         Array.from({ length: Math.min(UPLOAD_CONCURRENCY, toUpload.length) }, () => worker())
       );
 
+      // toAdd puede tener MÁS de una entrada apuntada por el mismo código
+      // dentro de este mismo lote (dos archivos con igual código, caso
+      // raro) — newByCode deja actualizar in-place esa entrada todavía sin
+      // persistir en vez de intentar un PATCH contra un id que la base de
+      // datos aún no conoce.
       const toAdd = [];
+      const newByCode = new Map();
+      const overwritten = [];
       for (const { parsed, uploadResult } of results) {
         if (!uploadResult.ok) {
           uploadFailures.push(`${parsed.code}: ${uploadResult.error}`);
           continue;
         }
-        toAdd.push({
-          id: crypto.randomUUID(),
-          modelo: parsed.modelo,
-          code: parsed.code,
-          label: parsed.code,
-          photoUrl: uploadResult.photoUrl,
-          photoPublicId: uploadResult.publicId,
-          approved: false,
-          cantidad: 0,
-          addedAt: new Date().toISOString(),
-        });
+        const codeKey = parsed.code.toLowerCase();
+        const pendingNew = newByCode.get(codeKey);
+        if (pendingNew) {
+          deleteImageFromCloudinary(pendingNew.photoPublicId); // la copia anterior de este mismo lote ya no sirve
+          pendingNew.photoUrl = uploadResult.photoUrl;
+          pendingNew.photoPublicId = uploadResult.publicId;
+          continue;
+        }
+        const existing = existingByCode.get(codeKey);
+        if (existing) {
+          const oldPublicId = existing.photoPublicId;
+          updateSkuGalleryVariant(existing.id, {
+            photoUrl: uploadResult.photoUrl,
+            photoPublicId: uploadResult.publicId,
+          });
+          deleteImageFromCloudinary(oldPublicId); // best-effort, no bloquea la respuesta
+          overwritten.push(parsed.code);
+        } else {
+          const item = {
+            id: crypto.randomUUID(),
+            modelo: parsed.modelo,
+            code: parsed.code,
+            label: parsed.code,
+            photoUrl: uploadResult.photoUrl,
+            photoPublicId: uploadResult.publicId,
+            approved: false,
+            cantidad: 0,
+            addedAt: new Date().toISOString(),
+          };
+          toAdd.push(item);
+          newByCode.set(codeKey, item);
+        }
       }
 
       const { added, all } = addSkuGalleryVariants(toAdd);
       res.status(201).json({
         variants: all,
         addedCount: added.length,
-        duplicates,
+        overwrittenCount: overwritten.length,
         unrecognized,
         uploadFailures,
       });

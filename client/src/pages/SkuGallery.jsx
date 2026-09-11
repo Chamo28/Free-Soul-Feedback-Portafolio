@@ -38,6 +38,7 @@ export default function SkuGallery() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null); // { done, total } mientras sube
   const [uploadWarnings, setUploadWarnings] = useState([]);
+  const [failedBatches, setFailedBatches] = useState([]); // File[][] — tandas que fallaron por completo, listas para reintentar
   const [expanded, setExpanded] = useState(new Set());
   const [zoomItem, setZoomItem] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -64,13 +65,15 @@ export default function SkuGallery() {
     if (files.length === 0) return;
     setUploading(true);
     setUploadWarnings([]);
+    setFailedBatches([]);
     const batches = chunk(files, UPLOAD_BATCH_SIZE);
     setUploadProgress({ done: 0, total: files.length });
 
     let totalAdded = 0;
-    const duplicates = [];
+    let totalOverwritten = 0;
     const unrecognized = [];
     const uploadFailures = [];
+    const stillFailedBatches = []; // tandas completas que fallaron — se ofrece reintentarlas
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
@@ -81,14 +84,16 @@ export default function SkuGallery() {
         setVariants(result.variants);
         setExpanded((prev) => new Set([...prev, ...result.variants.map((v) => v.modelo)]));
         totalAdded += result.addedCount || 0;
-        if (result.duplicates?.length) duplicates.push(...result.duplicates);
+        totalOverwritten += result.overwrittenCount || 0;
         if (result.unrecognized?.length) unrecognized.push(...result.unrecognized);
         if (result.uploadFailures?.length) uploadFailures.push(...result.uploadFailures);
       } catch (err) {
         // Un lote que falla (red, servidor) no frena los demás — los lotes
         // anteriores ya quedaron guardados, así que seguimos con el resto.
+        // Se guardan sus archivos para poder reintentar SOLO esta tanda.
+        stillFailedBatches.push(batch);
         uploadFailures.push(
-          `Tanda ${i + 1}/${batches.length}: ${err.response?.data?.error || "no se pudo subir."}`
+          `Tanda ${i + 1}/${batches.length} (${batch.length} foto(s)): ${err.response?.data?.error || "no se pudo subir."}`
         );
       } finally {
         setUploadProgress({ done: Math.min((i + 1) * UPLOAD_BATCH_SIZE, files.length), total: files.length });
@@ -97,13 +102,20 @@ export default function SkuGallery() {
 
     const warnings = [];
     if (totalAdded > 0) warnings.push(`✅ ${totalAdded} variante(s) nueva(s) registrada(s).`);
-    if (duplicates.length) warnings.push(`⏭️ Ya existían (se omiten): ${duplicates.join(", ")}.`);
+    if (totalOverwritten > 0) warnings.push(`🔄 ${totalOverwritten} foto(s) reemplazada(s) (mismo código, ya existían).`);
     if (unrecognized.length) warnings.push(`⚠️ No se reconoció el patrón LETRA+NÚMERO en: ${unrecognized.join(", ")}.`);
     if (uploadFailures.length) warnings.push(...uploadFailures.map((f) => `❌ ${f}`));
     setUploadWarnings(warnings);
+    setFailedBatches(stillFailedBatches);
     setUploading(false);
     setUploadProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleRetryFailed = () => {
+    const filesToRetry = failedBatches.flat();
+    setFailedBatches([]);
+    handleFiles(filesToRetry);
   };
 
   const patchLocal = (id, patch) => {
@@ -209,7 +221,9 @@ export default function SkuGallery() {
           </p>
           <p className="text-xs text-slate-400">
             Nombra cada foto <code>LETRA+NÚMERO</code> (ej. <code>A1.jpg</code>, <code>A2.jpg</code>, <code>B1.jpg</code>) — la
-            letra agrupa el modelo, el número es la variante de color. Se suben directo a Cloudinary, nunca a este servidor.
+            letra agrupa el modelo, el número es la variante de color. Se suben directo a Cloudinary, nunca a este
+            servidor. Si vuelves a soltar una foto con el mismo código (ej. otra <code>A1.jpg</code>), reemplaza la
+            foto anterior — no se duplica.
           </p>
           <input
             ref={fileInputRef}
@@ -238,11 +252,21 @@ export default function SkuGallery() {
         </div>
 
         {uploadWarnings.length > 0 && (
-          <ul className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 space-y-0.5 text-slate-600">
-            {uploadWarnings.map((w, i) => (
-              <li key={i}>{w}</li>
-            ))}
-          </ul>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4">
+            <ul className="text-xs space-y-0.5 text-slate-600">
+              {uploadWarnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+            {!uploading && failedBatches.length > 0 && (
+              <button
+                onClick={handleRetryFailed}
+                className="mt-2 text-xs bg-red-50 text-red-700 border border-red-200 rounded-lg px-3 py-1.5 font-medium"
+              >
+                🔁 Reintentar {failedBatches.flat().length} foto(s) que no se pudieron subir
+              </button>
+            )}
+          </div>
         )}
 
         <div className="flex items-center gap-2 mb-4">
