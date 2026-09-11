@@ -5,8 +5,9 @@ import { hasCredentials, getGoogleAuthClient } from "./googleAuth.js";
 // Credenciales del service account: se comparten entre todas las marcas (es
 // la misma cuenta de Google) — lo único que cambia por marca es a qué
 // spreadsheet apuntan las llamadas (brandSheetId() abajo). El parseo de las
-// credenciales vive en googleAuth.js (lo reusa también drive.js, para la
-// Galería Privada de SKUs).
+// credenciales vive en googleAuth.js. Las fotos de la Galería Privada de
+// SKUs usan un proveedor aparte (Cloudinary, ver services/cloudinary.js) —
+// no comparten credenciales con esto.
 
 // Config de Sheets de la marca activa — se lee en el momento (no una sola
 // vez al cargar el módulo) para que siga la marca del request actual.
@@ -24,7 +25,7 @@ const CURATION_RANKING_TAB = "Curaduria_Ranking";
 const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
 const SKU_GALLERY_TAB = "SKUs_Aprobados";
 
-const SKU_GALLERY_HEADER = ["Modelo", "Codigo", "Nombre", "Cantidad", "Foto_Drive_URL", "Fecha_Guardado"];
+const SKU_GALLERY_HEADER = ["Modelo", "Codigo", "Nombre", "Cantidad", "Foto_URL", "Fecha_Guardado"];
 
 // La última columna (Respuesta_ID) no es parte del pedido original de negocio,
 // es interna: nos permite ubicar y borrar la fila exacta de un evaluador

@@ -8,7 +8,12 @@ import {
   updateSkuGalleryVariant,
   deleteSkuGalleryVariant,
 } from "../jsonStore.js";
-import { uploadImageToDrive, deleteDriveFile, isDriveConfigured, driveConfigError } from "../services/drive.js";
+import {
+  uploadImageToCloudinary,
+  deleteImageFromCloudinary,
+  isCloudinaryConfigured,
+  cloudinaryConfigError,
+} from "../services/cloudinary.js";
 import { writeSkuGallerySheet } from "../services/sheets.js";
 import { brandContext } from "../brandContext.js";
 
@@ -38,23 +43,23 @@ function parseSkuFilename(filename) {
 }
 
 router.get("/", requireAdmin, (_req, res) => {
-  res.json({ variants: getSkuGalleryVariants(), driveConfigured: isDriveConfigured() });
+  res.json({ variants: getSkuGalleryVariants(), photoHostConfigured: isCloudinaryConfigured() });
 });
 
 // Sube un lote de fotos locales: cada una se parsea por nombre, se sube a
-// la carpeta de Drive de la marca activa (nunca al disco de Render) y se
-// registra como variante nueva — códigos que ya existen se saltan (no se
+// Cloudinary en una carpeta de la marca activa (nunca al disco de Render) y
+// se registra como variante nueva — códigos que ya existen se saltan (no se
 // re-suben ni se duplican). Igual que en curation.js: multer procesa los
 // archivos por streams y en producción se ha visto que eso "pierde" el
-// contexto de AsyncLocalStorage que usan jsonStore.js/drive.js, así que se
-// vuelve a fijar explícitamente con brandContext.run(req.brand, ...) apenas
+// contexto de AsyncLocalStorage que usan jsonStore.js/cloudinary.js, así que
+// se vuelve a fijar explícitamente con brandContext.run(req.brand, ...) apenas
 // termina multer, usando req.brand (lo fijó el middleware withBrand ANTES
 // de multer, 100% confiable) como fuente de verdad.
 router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
   brandContext.run(req.brand, async () => {
     try {
-      if (!isDriveConfigured()) {
-        return res.status(400).json({ error: driveConfigError() });
+      if (!isCloudinaryConfigured()) {
+        return res.status(400).json({ error: cloudinaryConfigError() });
       }
       const files = req.files || [];
       if (files.length === 0) {
@@ -77,7 +82,7 @@ router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
           duplicates.push(parsed.code);
           continue;
         }
-        const uploadResult = await uploadImageToDrive(file.buffer, file.originalname, file.mimetype);
+        const uploadResult = await uploadImageToCloudinary(file.buffer, file.originalname);
         if (!uploadResult.ok) {
           uploadFailures.push(`${parsed.code}: ${uploadResult.error}`);
           continue;
@@ -88,8 +93,8 @@ router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
           modelo: parsed.modelo,
           code: parsed.code,
           label: parsed.code,
-          driveUrl: uploadResult.driveUrl,
-          driveFileId: uploadResult.fileId,
+          photoUrl: uploadResult.photoUrl,
+          photoPublicId: uploadResult.publicId,
           approved: false,
           cantidad: 0,
           addedAt: new Date().toISOString(),
@@ -127,7 +132,7 @@ router.patch("/variants/:id", requireAdmin, (req, res) => {
 router.delete("/variants/:id", requireAdmin, async (req, res) => {
   const deleted = deleteSkuGalleryVariant(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Variante no encontrada." });
-  await deleteDriveFile(deleted.driveFileId); // best-effort, no bloquea la respuesta si falla
+  await deleteImageFromCloudinary(deleted.photoPublicId); // best-effort, no bloquea la respuesta si falla
   res.json({ ok: true });
 });
 
@@ -136,7 +141,7 @@ router.delete("/variants/:id", requireAdmin, async (req, res) => {
 // marca, ver comentario en sheets.js writeSkuGallerySheet).
 router.post("/sync", requireAdmin, async (req, res) => {
   const approved = getSkuGalleryVariants().filter((v) => v.approved);
-  const rows = approved.map((v) => [v.modelo, v.code, v.label, v.cantidad, v.driveUrl, new Date().toISOString()]);
+  const rows = approved.map((v) => [v.modelo, v.code, v.label, v.cantidad, v.photoUrl, new Date().toISOString()]);
   const result = await writeSkuGallerySheet(rows);
   res.json(result);
 });

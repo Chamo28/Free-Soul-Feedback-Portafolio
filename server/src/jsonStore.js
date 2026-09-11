@@ -311,9 +311,9 @@ export function deletePurchaseOrderItem(orderId, itemId) {
 // Una lista PLANA (no anidada como curationSurveys.items) porque hay una
 // sola galería por marca — no hace falta un nivel "galería" para agrupar,
 // cada variante ya trae su propio "modelo" (la letra) y se agrupa en el
-// frontend para mostrarla. `driveUrl`/`driveFileId` vienen de subir la foto
-// a Google Drive (ver services/drive.js) — nunca se guarda la foto en el
-// disco de Render.
+// frontend para mostrarla. `photoUrl`/`photoPublicId` vienen de subir la
+// foto a Cloudinary (ver services/cloudinary.js) — nunca se guarda la foto
+// en el disco de Render.
 
 export function getSkuGalleryVariants() {
   return readDb().skuGalleryVariants;

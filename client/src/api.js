@@ -320,12 +320,12 @@ export async function downloadPurchaseOrderCsv(id, filename) {
 }
 
 // --- Galería Privada de SKUs y Variantes de Color ---
-// Las fotos viven en Google Drive (driveUrl ya es una URL absoluta), no en
+// Las fotos viven en Cloudinary (photoUrl ya es una URL absoluta), no en
 // /uploads de este backend — no pasan por resolvePhoto().
 
 export async function getSkuGallery() {
   const { data } = await api.get("/sku-gallery");
-  return data; // { variants, driveConfigured }
+  return data; // { variants, photoHostConfigured }
 }
 
 // formData: un campo "photos" por cada archivo soltado en el dropzone.

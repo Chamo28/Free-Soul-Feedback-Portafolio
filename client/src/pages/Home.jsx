@@ -111,7 +111,7 @@ export default function Home() {
 
     getSkuGallery()
       .then(({ variants }) => {
-        const photos = (variants || []).map((v) => v.driveUrl).filter(Boolean).slice(0, 4);
+        const photos = (variants || []).map((v) => v.photoUrl).filter(Boolean).slice(0, 4);
         setSkuPhotos(photos);
       })
       .catch(() => {});

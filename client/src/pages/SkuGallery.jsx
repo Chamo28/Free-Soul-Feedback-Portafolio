@@ -19,7 +19,7 @@ function groupByModelo(variants) {
 
 export default function SkuGallery() {
   const [variants, setVariants] = useState([]);
-  const [driveConfigured, setDriveConfigured] = useState(true); // optimista hasta el primer load
+  const [photoHostConfigured, setPhotoHostConfigured] = useState(true); // optimista hasta el primer load
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -32,9 +32,9 @@ export default function SkuGallery() {
 
   const load = () => {
     getSkuGallery()
-      .then(({ variants, driveConfigured }) => {
+      .then(({ variants, photoHostConfigured }) => {
         setVariants(variants);
-        setDriveConfigured(driveConfigured);
+        setPhotoHostConfigured(photoHostConfigured);
         // Todos los modelos empiezan expandidos la primera vez que se cargan.
         setExpanded((prev) => new Set([...prev, ...variants.map((v) => v.modelo)]));
         setLoading(false);
@@ -93,7 +93,7 @@ export default function SkuGallery() {
   };
 
   const handleDelete = async (variant) => {
-    if (!confirm(`¿Quitar "${variant.label}" de la galería? También se borra su foto de Drive.`)) return;
+    if (!confirm(`¿Quitar "${variant.label}" de la galería? También se borra su foto guardada.`)) return;
     setVariants((prev) => prev.filter((v) => v.id !== variant.id));
     await deleteSkuGalleryVariant(variant.id);
   };
@@ -131,12 +131,10 @@ export default function SkuGallery() {
           piden, antes de pasar a la calculadora de pedidos.
         </p>
 
-        {!loading && !driveConfigured && (
+        {!loading && !photoHostConfigured && (
           <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-4 text-sm text-amber-800">
-            ⚠️ Google Drive no está configurado para esta marca todavía — falta compartir una carpeta de Drive con la
-            service account y guardar su ID en las variables de entorno del backend (
-            <code>GOOGLE_DRIVE_FOLDER_ID</code> / <code>ALAS_GOOGLE_DRIVE_FOLDER_ID</code>). Mientras tanto, subir
-            fotos va a fallar.
+            ⚠️ Todavía falta configurar Cloudinary en el backend (variable <code>CLOUDINARY_URL</code>, se copia tal
+            cual del dashboard de cloudinary.com). Mientras tanto, subir fotos va a fallar.
           </div>
         )}
 
@@ -175,7 +173,7 @@ export default function SkuGallery() {
           </p>
           <p className="text-xs text-slate-400">
             Nombra cada foto <code>LETRA+NÚMERO</code> (ej. <code>A1.jpg</code>, <code>A2.jpg</code>, <code>B1.jpg</code>) — la
-            letra agrupa el modelo, el número es la variante de color. Se suben a Google Drive, nunca a este servidor.
+            letra agrupa el modelo, el número es la variante de color. Se suben directo a Cloudinary, nunca a este servidor.
           </p>
           <input
             ref={fileInputRef}
@@ -185,7 +183,7 @@ export default function SkuGallery() {
             onChange={(e) => handleFiles(e.target.files)}
             className="hidden"
           />
-          {uploading && <p className="text-sm text-brand-600 mt-2">Subiendo a Drive...</p>}
+          {uploading && <p className="text-sm text-brand-600 mt-2">Subiendo fotos...</p>}
         </div>
 
         {uploadWarnings.length > 0 && (
@@ -231,7 +229,7 @@ export default function SkuGallery() {
                     <VariantCard
                       key={v.id}
                       variant={v}
-                      onZoom={() => setZoomItem({ photo: v.driveUrl, name: v.label })}
+                      onZoom={() => setZoomItem({ photo: v.photoUrl, name: v.label })}
                       onToggleApproved={() => handleToggleApproved(v)}
                       onQtyCommit={(val) => handleQtyCommit(v, val)}
                       onLabelCommit={(val) => handleLabelCommit(v, val)}
@@ -263,9 +261,9 @@ function VariantCard({ variant, onZoom, onToggleApproved, onQtyCommit, onLabelCo
       }`}
     >
       <div className="aspect-square bg-slate-100 relative">
-        {variant.driveUrl ? (
+        {variant.photoUrl ? (
           <img
-            src={variant.driveUrl}
+            src={variant.photoUrl}
             alt={variant.label}
             referrerPolicy="no-referrer"
             onClick={onZoom}
