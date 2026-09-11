@@ -3,6 +3,19 @@ import Navbar from "../components/Navbar.jsx";
 import ZoomModal from "../components/ZoomModal.jsx";
 import { getSkuGallery, uploadSkuGalleryPhotos, updateSkuGalleryVariant, deleteSkuGalleryVariant, syncSkuGallery } from "../api.js";
 
+// Tamaño de lote para subir fotos: con cientos de fotos, mandarlas TODAS en
+// una sola request tardaba minutos sin dar ninguna señal de progreso (y
+// arriesgaba el límite de archivos por request del backend). Se suben en
+// tandas chicas, una tras otra, así cada request es rápida y se puede
+// mostrar una barra de progreso real (tanda a tanda).
+const UPLOAD_BATCH_SIZE = 15;
+
+function chunk(array, size) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += size) chunks.push(array.slice(i, i + size));
+  return chunks;
+}
+
 // Agrupa la lista plana de variantes por modelo (la letra) y ordena cada
 // grupo por código (A1, A2, A3...) para que la grilla salga estable.
 function groupByModelo(variants) {
@@ -23,6 +36,7 @@ export default function SkuGallery() {
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null); // { done, total } mientras sube
   const [uploadWarnings, setUploadWarnings] = useState([]);
   const [expanded, setExpanded] = useState(new Set());
   const [zoomItem, setZoomItem] = useState(null);
@@ -45,29 +59,51 @@ export default function SkuGallery() {
   useEffect(load, []);
 
   const handleFiles = async (fileList) => {
+    if (uploading) return; // evita mezclar dos subidas si se sueltan más fotos a mitad de camino
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
     setUploading(true);
     setUploadWarnings([]);
-    try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append("photos", f));
-      const result = await uploadSkuGalleryPhotos(formData);
-      setVariants(result.variants);
-      setExpanded((prev) => new Set([...prev, ...result.variants.map((v) => v.modelo)]));
-      const warnings = [];
-      if (result.addedCount > 0) warnings.push(`✅ ${result.addedCount} variante(s) nueva(s) registrada(s).`);
-      if (result.duplicates?.length) warnings.push(`⏭️ Ya existían (se omiten): ${result.duplicates.join(", ")}.`);
-      if (result.unrecognized?.length)
-        warnings.push(`⚠️ No se reconoció el patrón LETRA+NÚMERO en: ${result.unrecognized.join(", ")}.`);
-      if (result.uploadFailures?.length) warnings.push(...result.uploadFailures.map((f) => `❌ ${f}`));
-      setUploadWarnings(warnings);
-    } catch (err) {
-      setUploadWarnings([err.response?.data?.error || "Error subiendo las fotos."]);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    const batches = chunk(files, UPLOAD_BATCH_SIZE);
+    setUploadProgress({ done: 0, total: files.length });
+
+    let totalAdded = 0;
+    const duplicates = [];
+    const unrecognized = [];
+    const uploadFailures = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      try {
+        const formData = new FormData();
+        batch.forEach((f) => formData.append("photos", f));
+        const result = await uploadSkuGalleryPhotos(formData);
+        setVariants(result.variants);
+        setExpanded((prev) => new Set([...prev, ...result.variants.map((v) => v.modelo)]));
+        totalAdded += result.addedCount || 0;
+        if (result.duplicates?.length) duplicates.push(...result.duplicates);
+        if (result.unrecognized?.length) unrecognized.push(...result.unrecognized);
+        if (result.uploadFailures?.length) uploadFailures.push(...result.uploadFailures);
+      } catch (err) {
+        // Un lote que falla (red, servidor) no frena los demás — los lotes
+        // anteriores ya quedaron guardados, así que seguimos con el resto.
+        uploadFailures.push(
+          `Tanda ${i + 1}/${batches.length}: ${err.response?.data?.error || "no se pudo subir."}`
+        );
+      } finally {
+        setUploadProgress({ done: Math.min((i + 1) * UPLOAD_BATCH_SIZE, files.length), total: files.length });
+      }
     }
+
+    const warnings = [];
+    if (totalAdded > 0) warnings.push(`✅ ${totalAdded} variante(s) nueva(s) registrada(s).`);
+    if (duplicates.length) warnings.push(`⏭️ Ya existían (se omiten): ${duplicates.join(", ")}.`);
+    if (unrecognized.length) warnings.push(`⚠️ No se reconoció el patrón LETRA+NÚMERO en: ${unrecognized.join(", ")}.`);
+    if (uploadFailures.length) warnings.push(...uploadFailures.map((f) => `❌ ${f}`));
+    setUploadWarnings(warnings);
+    setUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const patchLocal = (id, patch) => {
@@ -183,7 +219,22 @@ export default function SkuGallery() {
             onChange={(e) => handleFiles(e.target.files)}
             className="hidden"
           />
-          {uploading && <p className="text-sm text-brand-600 mt-2">Subiendo fotos...</p>}
+          {uploading && uploadProgress && (
+            <div className="mt-3 max-w-xs mx-auto">
+              <div className="flex justify-between text-xs text-brand-700 font-medium mb-1">
+                <span>Subiendo fotos...</span>
+                <span>
+                  {uploadProgress.done} / {uploadProgress.total}
+                </span>
+              </div>
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-brand-600 transition-all duration-300"
+                  style={{ width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {uploadWarnings.length > 0 && (

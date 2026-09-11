@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -56,6 +57,26 @@ app.use("/api/sync", syncRoutes);
 app.use("/api/curation", curationRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
 app.use("/api/sku-gallery", skuGalleryRoutes);
+
+// Manejador de errores global: sin esto, un error de Multer (ej. subir más
+// archivos o más peso del límite configurado en curation.js/products.js/
+// skuGallery.js) no lo agarra ninguna ruta — Express cae a su handler por
+// defecto, que en producción puede devolver HTML en vez de JSON o cortar la
+// conexión sin avisar, y el frontend queda pegado en "Subiendo..." sin
+// ningún error visible. Siempre va AL FINAL, después de montar las rutas.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err instanceof multer.MulterError) {
+    const messages = {
+      LIMIT_FILE_SIZE: "Una de las fotos pesa más de lo permitido.",
+      LIMIT_FILE_COUNT: "Estás subiendo más fotos de las permitidas en un solo lote — sube en tandas más chicas.",
+      LIMIT_UNEXPECTED_FILE: "Estás subiendo más fotos de las permitidas en un solo lote — sube en tandas más chicas.",
+    };
+    return res.status(400).json({ error: messages[err.code] || `Error subiendo el archivo: ${err.message}` });
+  }
+  console.error(err);
+  res.status(500).json({ error: "Error interno del servidor: " + err.message });
+});
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

@@ -17,9 +17,17 @@ import {
 import { writeSkuGallerySheet } from "../services/sheets.js";
 import { brandContext } from "../brandContext.js";
 
+// El límite de archivos por request es un tope de SEGURIDAD, no el tamaño
+// de lote esperado: el frontend divide subidas grandes en lotes chicos (ver
+// SkuGallery.jsx) para poder mostrar progreso y no golpear timeouts de
+// Render/el navegador con una sola request gigante — este número solo
+// necesita cubrir ese tamaño de lote con margen.
+const MAX_FILES_PER_REQUEST = 40;
+const UPLOAD_CONCURRENCY = 5; // mismo valor que imageDownloader.js
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024, files: 60 },
+  limits: { fileSize: 15 * 1024 * 1024, files: MAX_FILES_PER_REQUEST },
 });
 
 const router = Router();
@@ -55,7 +63,7 @@ router.get("/", requireAdmin, (_req, res) => {
 // se vuelve a fijar explícitamente con brandContext.run(req.brand, ...) apenas
 // termina multer, usando req.brand (lo fijó el middleware withBrand ANTES
 // de multer, 100% confiable) como fuente de verdad.
-router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
+router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUEST), (req, res) =>
   brandContext.run(req.brand, async () => {
     try {
       if (!isCloudinaryConfigured()) {
@@ -70,8 +78,11 @@ router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
       const unrecognized = [];
       const duplicates = [];
       const uploadFailures = [];
-      const toAdd = [];
 
+      // Filtra de entrada lo que no hace falta subir a Cloudinary (nombre no
+      // reconocido, código ya existente) — solo las fotos que SÍ se van a
+      // subir pasan al pool de concurrencia de abajo.
+      const toUpload = [];
       for (const file of files) {
         const parsed = parseSkuFilename(file.originalname);
         if (!parsed) {
@@ -82,12 +93,34 @@ router.post("/upload", requireAdmin, upload.array("photos", 60), (req, res) =>
           duplicates.push(parsed.code);
           continue;
         }
-        const uploadResult = await uploadImageToCloudinary(file.buffer, file.originalname);
+        existingCodes.add(parsed.code.toLowerCase()); // evita duplicados dentro del mismo lote
+        toUpload.push({ file, parsed });
+      }
+
+      // Subida en paralelo (con tope de concurrencia, igual que
+      // imageDownloader.js) en vez de una por una — con lotes de decenas de
+      // fotos, subir en serie tardaba minutos y no daba ninguna señal de
+      // progreso real. Una foto fallida no detiene a las demás.
+      const results = new Array(toUpload.length);
+      let cursor = 0;
+      async function worker() {
+        while (cursor < toUpload.length) {
+          const index = cursor++;
+          const { file, parsed } = toUpload[index];
+          const uploadResult = await uploadImageToCloudinary(file.buffer, file.originalname);
+          results[index] = { parsed, uploadResult };
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(UPLOAD_CONCURRENCY, toUpload.length) }, () => worker())
+      );
+
+      const toAdd = [];
+      for (const { parsed, uploadResult } of results) {
         if (!uploadResult.ok) {
           uploadFailures.push(`${parsed.code}: ${uploadResult.error}`);
           continue;
         }
-        existingCodes.add(parsed.code.toLowerCase()); // evita duplicados dentro del mismo lote
         toAdd.push({
           id: crypto.randomUUID(),
           modelo: parsed.modelo,
