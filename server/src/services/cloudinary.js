@@ -71,10 +71,13 @@ export async function uploadImageToCloudinary(buffer, filename) {
 
 // Borrado best-effort: si falla (ya no existe, Cloudinary no configurado),
 // no se propaga como error — el registro local de todos modos se borra.
+// `invalidate: true` pide que también se purgue la copia en el CDN, no
+// solo el archivo origen — sin esto, la URL puede seguir respondiendo 200
+// desde caché por un rato aunque el archivo ya esté borrado en Cloudinary.
 export async function deleteImageFromCloudinary(publicId) {
   if (!publicId || !isCloudinaryConfigured()) return;
   try {
-    await cloudinary.uploader.destroy(publicId);
+    await cloudinary.uploader.destroy(publicId, { invalidate: true });
   } catch {
     // best-effort — ver comentario arriba.
   }
