@@ -1,24 +1,12 @@
-import fs from "fs";
-import path from "path";
 import { google } from "googleapis";
 import { currentBrand } from "../brandContext.js";
+import { hasCredentials, getGoogleAuthClient } from "./googleAuth.js";
 
 // Credenciales del service account: se comparten entre todas las marcas (es
 // la misma cuenta de Google) — lo único que cambia por marca es a qué
-// spreadsheet apuntan las llamadas (brandSheetId() abajo).
-const CREDENTIALS_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
-const CREDENTIALS_BASE64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 || "";
-
-function loadCredentialsObject() {
-  if (CREDENTIALS_BASE64) {
-    try {
-      return JSON.parse(Buffer.from(CREDENTIALS_BASE64, "base64").toString("utf-8"));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
+// spreadsheet apuntan las llamadas (brandSheetId() abajo). El parseo de las
+// credenciales vive en googleAuth.js (lo reusa también drive.js, para la
+// Galería Privada de SKUs).
 
 // Config de Sheets de la marca activa — se lee en el momento (no una sola
 // vez al cargar el módulo) para que siga la marca del request actual.
@@ -34,6 +22,9 @@ function brandSheetTab() {
 const CURATION_RESPONSES_TAB = "Curaduria_Respuestas";
 const CURATION_RANKING_TAB = "Curaduria_Ranking";
 const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
+const SKU_GALLERY_TAB = "SKUs_Aprobados";
+
+const SKU_GALLERY_HEADER = ["Modelo", "Codigo", "Nombre", "Cantidad", "Foto_Drive_URL", "Fecha_Guardado"];
 
 // La última columna (Respuesta_ID) no es parte del pedido original de negocio,
 // es interna: nos permite ubicar y borrar la fila exacta de un evaluador
@@ -141,24 +132,17 @@ async function getTabSheetId(client, spreadsheetId, tab) {
 }
 
 function isConfigured() {
-  if (!brandSheetId()) return false;
-  if (CREDENTIALS_BASE64) return true;
-  return Boolean(CREDENTIALS_PATH && fs.existsSync(path.resolve(CREDENTIALS_PATH)));
+  return Boolean(brandSheetId()) && hasCredentials();
 }
 
 async function getClient() {
   if (sheetsClient) return sheetsClient;
-  if (!CREDENTIALS_BASE64 && !CREDENTIALS_PATH) {
+  if (!hasCredentials()) {
     initError = "Google Sheets no está configurado (faltan las credenciales del service account).";
     return null;
   }
   try {
-    const credentialsObject = loadCredentialsObject();
-    const authOptions = credentialsObject
-      ? { credentials: credentialsObject, scopes: ["https://www.googleapis.com/auth/spreadsheets"] }
-      : { keyFile: path.resolve(CREDENTIALS_PATH), scopes: ["https://www.googleapis.com/auth/spreadsheets"] };
-    const auth = new google.auth.GoogleAuth(authOptions);
-    const authClient = await auth.getClient();
+    const authClient = await getGoogleAuthClient(["https://www.googleapis.com/auth/spreadsheets"]);
     sheetsClient = google.sheets({ version: "v4", auth: authClient });
     initError = null;
     return sheetsClient;
@@ -212,6 +196,7 @@ export function getStatus() {
     curationResponsesTab: CURATION_RESPONSES_TAB,
     curationRankingTab: CURATION_RANKING_TAB,
     purchaseOrdersTab: PURCHASE_ORDERS_TAB,
+    skuGalleryTab: SKU_GALLERY_TAB,
   };
 }
 
@@ -364,6 +349,38 @@ export async function writePurchaseOrderSheet(orderId, rows) {
         range: `${PURCHASE_ORDERS_TAB}!A2`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: merged },
+      });
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Reescribe por completo la pestaña de SKUs aprobados: a diferencia de
+// Pedidos (que comparte una pestaña entre varios pedidos, identificados por
+// Pedido_ID), acá hay UNA sola galería por marca — así que cada
+// sincronización simplemente reemplaza todas las filas por el estado actual
+// de las variantes aprobadas (no hace falta mergear por id).
+export async function writeSkuGallerySheet(rows) {
+  const client = await getClient();
+  if (!client) return { ok: false, error: initError };
+  const spreadsheetId = brandSheetId();
+  if (!spreadsheetId) return { ok: false, error: "Falta configurar la hoja de Google de esta marca." };
+  try {
+    await ensureTabExists(client, spreadsheetId, SKU_GALLERY_TAB);
+    await ensureHeaderFor(client, spreadsheetId, SKU_GALLERY_TAB, SKU_GALLERY_HEADER);
+    const lastCol = colLetter(SKU_GALLERY_HEADER.length);
+    await client.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${SKU_GALLERY_TAB}!A2:${lastCol}100000`,
+    });
+    if (rows.length > 0) {
+      await client.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${SKU_GALLERY_TAB}!A2`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: rows },
       });
     }
     return { ok: true };

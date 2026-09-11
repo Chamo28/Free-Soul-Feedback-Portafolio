@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getSyncStatus, getCurationSurveys, getPurchaseOrders, getPurchaseOrder, adminLogout } from "../api.js";
+import { getSyncStatus, getCurationSurveys, getPurchaseOrders, getPurchaseOrder, getSkuGallery, adminLogout } from "../api.js";
 import { useBrand } from "../BrandContext.jsx";
 
 // Collage de portada: si el módulo ya tiene fotos reales (productos subidos,
@@ -70,6 +70,7 @@ export default function Home() {
   const [status, setStatus] = useState(null);
   const [curationPhotos, setCurationPhotos] = useState([]);
   const [orderPhotos, setOrderPhotos] = useState([]);
+  const [skuPhotos, setSkuPhotos] = useState([]);
   const navigate = useNavigate();
   const brand = useBrand();
 
@@ -105,6 +106,13 @@ export default function Home() {
         } catch {
           // sin conexión puntual: la tarjeta simplemente cae al ícono
         }
+      })
+      .catch(() => {});
+
+    getSkuGallery()
+      .then(({ variants }) => {
+        const photos = (variants || []).map((v) => v.driveUrl).filter(Boolean).slice(0, 4);
+        setSkuPhotos(photos);
       })
       .catch(() => {});
   }, []);
@@ -169,6 +177,14 @@ export default function Home() {
             photos={orderPhotos}
             title="Gestión de Pedidos & Sourcing (1688)"
             subtitle="Importación masiva de URLs, calculadora de costos FOB/Landed y Órdenes de Compra."
+          />
+          <ModuleCard
+            to="/admin/curaduria-skus"
+            icon="🎨"
+            gradientClass="bg-gradient-to-br from-sand-500 to-brand-700"
+            photos={skuPhotos}
+            title="Galería Privada de SKUs"
+            subtitle="Revisión de todas las variantes de color por modelo, antes de liquidar el pedido."
           />
           <ModuleCard
             icon="🛍️"

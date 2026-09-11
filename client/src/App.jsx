@@ -13,6 +13,7 @@ import Curation from "./pages/Curation.jsx";
 import ThankYou from "./pages/ThankYou.jsx";
 import PurchaseOrdersList from "./pages/PurchaseOrdersList.jsx";
 import PurchaseOrderDetail from "./pages/PurchaseOrderDetail.jsx";
+import SkuGallery from "./pages/SkuGallery.jsx";
 
 function RequireAdmin({ children }) {
   if (!isAdminLoggedIn()) return <Navigate to="/admin/login" replace />;
@@ -86,6 +87,14 @@ export default function App() {
         element={
           <RequireAdmin>
             <PurchaseOrderDetail />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/curaduria-skus"
+        element={
+          <RequireAdmin>
+            <SkuGallery />
           </RequireAdmin>
         }
       />

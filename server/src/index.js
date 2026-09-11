@@ -10,6 +10,7 @@ import responsesRoutes from "./routes/responses.js";
 import syncRoutes from "./routes/sync.js";
 import curationRoutes from "./routes/curation.js";
 import purchaseOrdersRoutes from "./routes/purchaseOrders.js";
+import skuGalleryRoutes from "./routes/skuGallery.js";
 import { getStatus } from "./services/sheets.js";
 import { withBrand } from "./middleware/brand.js";
 
@@ -54,6 +55,7 @@ app.use("/api/responses", responsesRoutes);
 app.use("/api/sync", syncRoutes);
 app.use("/api/curation", curationRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
+app.use("/api/sku-gallery", skuGalleryRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

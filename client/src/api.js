@@ -319,4 +319,36 @@ export async function downloadPurchaseOrderCsv(id, filename) {
   window.URL.revokeObjectURL(url);
 }
 
+// --- Galería Privada de SKUs y Variantes de Color ---
+// Las fotos viven en Google Drive (driveUrl ya es una URL absoluta), no en
+// /uploads de este backend — no pasan por resolvePhoto().
+
+export async function getSkuGallery() {
+  const { data } = await api.get("/sku-gallery");
+  return data; // { variants, driveConfigured }
+}
+
+// formData: un campo "photos" por cada archivo soltado en el dropzone.
+export async function uploadSkuGalleryPhotos(formData) {
+  const { data } = await api.post("/sku-gallery/upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data; // { variants, addedCount, duplicates, unrecognized, uploadFailures }
+}
+
+export async function updateSkuGalleryVariant(id, patch) {
+  const { data } = await api.patch(`/sku-gallery/variants/${id}`, patch);
+  return data;
+}
+
+export async function deleteSkuGalleryVariant(id) {
+  const { data } = await api.delete(`/sku-gallery/variants/${id}`);
+  return data;
+}
+
+export async function syncSkuGallery() {
+  const { data } = await api.post("/sku-gallery/sync");
+  return data;
+}
+
 export default api;

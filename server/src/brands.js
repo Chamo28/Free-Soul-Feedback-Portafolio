@@ -17,6 +17,9 @@ export const BRANDS = {
     sheetIdEnv: "GOOGLE_SHEET_ID",
     sheetTabEnv: "GOOGLE_SHEET_TAB",
     adminPasswordEnv: "ADMIN_PASSWORD",
+    // Carpeta de Google Drive (compartida con la service account) donde se
+    // suben las fotos de la Galería Privada de SKUs — ver services/drive.js.
+    driveFolderIdEnv: "GOOGLE_DRIVE_FOLDER_ID",
   },
   "alas-de-amara": {
     id: "alas-de-amara",
@@ -27,6 +30,7 @@ export const BRANDS = {
     sheetIdEnv: "ALAS_GOOGLE_SHEET_ID",
     sheetTabEnv: "ALAS_GOOGLE_SHEET_TAB",
     adminPasswordEnv: "ALAS_ADMIN_PASSWORD",
+    driveFolderIdEnv: "ALAS_GOOGLE_DRIVE_FOLDER_ID",
   },
 };
 

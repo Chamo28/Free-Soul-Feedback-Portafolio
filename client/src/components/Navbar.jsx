@@ -42,6 +42,9 @@ export default function Navbar() {
           <Link className={linkClass("/admin/pedidos", { exact: false })} to="/admin/pedidos">
             Pedidos
           </Link>
+          <Link className={linkClass("/admin/curaduria-skus")} to="/admin/curaduria-skus">
+            Galería SKUs
+          </Link>
           <button
             onClick={() => {
               adminLogout();

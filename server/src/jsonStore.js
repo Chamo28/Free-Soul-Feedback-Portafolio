@@ -17,7 +17,14 @@ function getDbPath() {
   return path.join(DATA_DIR, currentBrand().dataFile);
 }
 
-const DEFAULT_DB = { products: [], responses: [], curationSurveys: [], curationResponses: [], purchaseOrders: [] };
+const DEFAULT_DB = {
+  products: [],
+  responses: [],
+  curationSurveys: [],
+  curationResponses: [],
+  purchaseOrders: [],
+  skuGalleryVariants: [],
+};
 
 function ensureDb() {
   const dbPath = getDbPath();
@@ -297,4 +304,56 @@ export function deletePurchaseOrderItem(orderId, itemId) {
   order.items = order.items.filter((i) => i.id !== itemId);
   writeDb(db);
   return order.items.length < before;
+}
+
+// --- Galería Privada de SKUs y Variantes de Color ---
+//
+// Una lista PLANA (no anidada como curationSurveys.items) porque hay una
+// sola galería por marca — no hace falta un nivel "galería" para agrupar,
+// cada variante ya trae su propio "modelo" (la letra) y se agrupa en el
+// frontend para mostrarla. `driveUrl`/`driveFileId` vienen de subir la foto
+// a Google Drive (ver services/drive.js) — nunca se guarda la foto en el
+// disco de Render.
+
+export function getSkuGalleryVariants() {
+  return readDb().skuGalleryVariants;
+}
+
+// Inserta variantes nuevas, salteando (sin error) cualquier `code` que ya
+// exista — así soltar el mismo lote de fotos dos veces no duplica nada.
+// Devuelve { added, skipped } para que la ruta arme sus warnings.
+export function addSkuGalleryVariants(newVariants) {
+  const db = readDb();
+  const existingCodes = new Set(db.skuGalleryVariants.map((v) => v.code.toLowerCase()));
+  const added = [];
+  const skipped = [];
+  for (const v of newVariants) {
+    if (existingCodes.has(v.code.toLowerCase())) {
+      skipped.push(v.code);
+      continue;
+    }
+    db.skuGalleryVariants.push(v);
+    existingCodes.add(v.code.toLowerCase());
+    added.push(v);
+  }
+  writeDb(db);
+  return { added, skipped, all: db.skuGalleryVariants };
+}
+
+export function updateSkuGalleryVariant(id, patch) {
+  const db = readDb();
+  const variant = db.skuGalleryVariants.find((v) => v.id === id);
+  if (!variant) return null;
+  Object.assign(variant, patch);
+  writeDb(db);
+  return variant;
+}
+
+export function deleteSkuGalleryVariant(id) {
+  const db = readDb();
+  const before = db.skuGalleryVariants.length;
+  const variant = db.skuGalleryVariants.find((v) => v.id === id);
+  db.skuGalleryVariants = db.skuGalleryVariants.filter((v) => v.id !== id);
+  writeDb(db);
+  return db.skuGalleryVariants.length < before ? variant : null;
 }
