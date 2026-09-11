@@ -21,8 +21,14 @@ const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 let driveClient = null;
 let initError = null;
 
+// Acepta tanto el ID pelado como el link completo que copia/pega cualquiera
+// desde la barra del navegador (ej. "https://drive.google.com/drive/
+// folders/1ze8-...") — sin esto, pegar el link tal cual da "File not
+// found" en Drive (la API espera solo el ID, no la URL).
 function brandDriveFolderId() {
-  return process.env[currentBrand().driveFolderIdEnv] || "";
+  const raw = (process.env[currentBrand().driveFolderIdEnv] || "").trim();
+  const match = raw.match(/folders\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : raw;
 }
 
 export function isDriveConfigured() {
