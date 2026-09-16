@@ -6,6 +6,7 @@ import {
   uploadSkuGalleryPhotos,
   updateSkuGalleryVariant,
   deleteSkuGalleryVariant,
+  deleteSkuGalleryModelos,
   syncSkuGallery,
   createSkuGalleryCollection,
   updateSkuGalleryCollection,
@@ -84,6 +85,8 @@ export default function SkuGallery() {
   const [uploadWarnings, setUploadWarnings] = useState([]);
   const [failedBatches, setFailedBatches] = useState([]); // File[][] — tandas que fallaron por completo, listas para reintentar
   const [expanded, setExpanded] = useState(new Set());
+  const [selectedModelos, setSelectedModelos] = useState(new Set()); // borrado masivo por modelo
+  const [deletingModelos, setDeletingModelos] = useState(false);
   const [zoomItem, setZoomItem] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
@@ -198,6 +201,54 @@ export default function SkuGallery() {
       else next.add(modelo);
       return next;
     });
+  };
+
+  // --- Selección y borrado masivo de modelos completos ---
+  // (ej. seleccionar los modelos C, H, I y borrarlos de una sola vez, en vez
+  // de una variante a la vez — incluye los modelos que están "Sin colección").
+
+  const toggleModeloSelected = (modelo) => {
+    setSelectedModelos((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelo)) next.delete(modelo);
+      else next.add(modelo);
+      return next;
+    });
+  };
+
+  // Selecciona/deselecciona TODOS los modelos de un bucket (colección o "Sin
+  // colección") de un solo click — así se puede vaciar un grupo entero.
+  const toggleBucketSelected = (modeloGroups) => {
+    const modelosInBucket = modeloGroups.map(([modelo]) => modelo);
+    const allSelected = modelosInBucket.every((m) => selectedModelos.has(m));
+    setSelectedModelos((prev) => {
+      const next = new Set(prev);
+      for (const m of modelosInBucket) {
+        if (allSelected) next.delete(m);
+        else next.add(m);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelectedModelos = async () => {
+    const modelos = [...selectedModelos];
+    if (modelos.length === 0) return;
+    const count = variants.filter((v) => modelos.includes(v.modelo)).length;
+    if (
+      !confirm(
+        `¿Borrar ${modelos.length} modelo(s) completos (${modelos.sort().join(", ")}) — ${count} foto(s) en total? También se borran de Cloudinary. Esta acción no se puede deshacer.`
+      )
+    )
+      return;
+    setDeletingModelos(true);
+    try {
+      const result = await deleteSkuGalleryModelos(modelos);
+      setVariants(result.variants);
+      setSelectedModelos(new Set());
+    } finally {
+      setDeletingModelos(false);
+    }
   };
 
   const handleSync = async () => {
@@ -503,7 +554,7 @@ export default function SkuGallery() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -512,6 +563,17 @@ export default function SkuGallery() {
             {syncing ? "Guardando..." : "💾 Guardar selección en Sheets"}
           </button>
           {syncMsg && <span className="text-xs text-slate-500">{syncMsg}</span>}
+          {selectedModelos.size > 0 && (
+            <button
+              onClick={handleDeleteSelectedModelos}
+              disabled={deletingModelos}
+              className="text-sm bg-red-50 text-red-700 border border-red-300 rounded-lg px-4 py-1.5 font-medium disabled:opacity-60 ml-auto"
+            >
+              {deletingModelos
+                ? "Borrando..."
+                : `🗑️ Borrar ${selectedModelos.size} modelo(s) seleccionado(s)`}
+            </button>
+          )}
         </div>
 
         {!loading && buckets.length === 0 && (
@@ -546,22 +608,48 @@ export default function SkuGallery() {
                       {collection?.categoria ? ` · ${collection.categoria}` : ""}
                     </p>
                   </div>
-                  {collection?.pvpObjetivo > 0 && (
-                    <span
-                      className={`text-xs font-bold px-3 py-1.5 rounded-full ${
-                        collection ? "bg-white/15 text-white" : "bg-white text-slate-700"
+                  <div className="flex items-center gap-2">
+                    {collection?.pvpObjetivo > 0 && (
+                      <span
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full ${
+                          collection ? "bg-white/15 text-white" : "bg-white text-slate-700"
+                        }`}
+                      >
+                        PVP objetivo {formatCOP(collection.pvpObjetivo)}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => toggleBucketSelected(modeloGroups)}
+                      className={`text-xs font-medium px-2.5 py-1.5 rounded-full border ${
+                        collection
+                          ? "border-white/40 text-white hover:bg-white/10"
+                          : "border-slate-300 text-slate-600 hover:bg-white"
                       }`}
                     >
-                      PVP objetivo {formatCOP(collection.pvpObjetivo)}
-                    </span>
-                  )}
+                      {modeloGroups.every(([modelo]) => selectedModelos.has(modelo))
+                        ? "Deseleccionar todos"
+                        : "Seleccionar todos"}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Grilla anidada: Modelos -> Variantes */}
                 <div className="space-y-3">
                   {modeloGroups.map(([modelo, items]) => (
-                    <div key={modelo} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div
+                      key={modelo}
+                      className={`bg-white border rounded-xl overflow-hidden ${
+                        selectedModelos.has(modelo) ? "border-red-400 ring-1 ring-red-200" : "border-slate-200"
+                      }`}
+                    >
                       <div className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 gap-2 flex-wrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedModelos.has(modelo)}
+                          onChange={() => toggleModeloSelected(modelo)}
+                          title="Seleccionar este modelo para borrado masivo"
+                          className="flex-shrink-0 w-4 h-4"
+                        />
                         <button
                           onClick={() => toggleExpanded(modelo)}
                           className="flex items-center gap-2 font-semibold text-slate-800 flex-1 min-w-0 text-left"

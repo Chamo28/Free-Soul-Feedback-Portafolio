@@ -7,6 +7,7 @@ import {
   addSkuGalleryVariants,
   updateSkuGalleryVariant,
   deleteSkuGalleryVariant,
+  deleteSkuGalleryVariantsByModelo,
   getSkuGalleryCollections,
   addSkuGalleryCollection,
   updateSkuGalleryCollection,
@@ -267,6 +268,22 @@ router.delete("/variants/:id", requireAdmin, async (req, res) => {
   if (!deleted) return res.status(404).json({ error: "Variante no encontrada." });
   await deleteImageFromCloudinary(deleted.photoPublicId); // best-effort, no bloquea la respuesta si falla
   res.json({ ok: true });
+});
+
+// Borra de una sola vez TODOS los modelos de la lista (todas sus
+// variantes/fotos) — ej. seleccionar los modelos C, H, I y borrarlos con un
+// solo botón, en vez de una variante a la vez. body: { modelos: ["C","H"] }
+router.delete("/models", requireAdmin, async (req, res) => {
+  const { modelos } = req.body || {};
+  if (!Array.isArray(modelos) || modelos.length === 0) {
+    return res.status(400).json({ error: "Selecciona al menos un modelo para borrar." });
+  }
+  const { deleted, all } = deleteSkuGalleryVariantsByModelo(modelos);
+  if (deleted.length === 0) {
+    return res.status(404).json({ error: "No se encontró ninguna variante de esos modelos." });
+  }
+  await Promise.all(deleted.map((v) => deleteImageFromCloudinary(v.photoPublicId))); // best-effort
+  res.json({ ok: true, deletedCount: deleted.length, variants: all });
 });
 
 // Sincroniza SOLO las variantes aprobadas a la pestaña SKUs_Aprobados —

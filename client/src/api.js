@@ -346,6 +346,13 @@ export async function deleteSkuGalleryVariant(id) {
   return data;
 }
 
+// Borra TODOS los modelos de la lista de una sola vez (todas sus variantes
+// y fotos) — ej. ["C","H","I"].
+export async function deleteSkuGalleryModelos(modelos) {
+  const { data } = await api.delete("/sku-gallery/models", { data: { modelos } });
+  return data; // { ok, deletedCount, variants }
+}
+
 export async function syncSkuGallery() {
   const { data } = await api.post("/sku-gallery/sync");
   return data;

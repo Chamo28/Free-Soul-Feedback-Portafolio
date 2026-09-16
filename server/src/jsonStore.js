@@ -359,6 +359,19 @@ export function deleteSkuGalleryVariant(id) {
   return db.skuGalleryVariants.length < before ? variant : null;
 }
 
+// Borra TODAS las variantes de la lista de modelos dada de una sola vez
+// (ej. borrar los modelos "C", "H", "I" completos, no una variante a la
+// vez) — devuelve las variantes borradas (para que la ruta pueda limpiar
+// sus fotos de Cloudinary una por una) y la lista que queda.
+export function deleteSkuGalleryVariantsByModelo(modelos) {
+  const db = readDb();
+  const modeloSet = new Set(modelos);
+  const deleted = db.skuGalleryVariants.filter((v) => modeloSet.has(v.modelo));
+  db.skuGalleryVariants = db.skuGalleryVariants.filter((v) => !modeloSet.has(v.modelo));
+  writeDb(db);
+  return { deleted, all: db.skuGalleryVariants };
+}
+
 // --- Colecciones (agrupación de negocio sobre la Galería de SKUs) ---
 //
 // Una Colección es metadata de negocio (nombre, descripción, PVP objetivo,
