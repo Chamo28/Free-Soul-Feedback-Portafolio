@@ -350,53 +350,44 @@ export default function SkuGallery() {
           </div>
         )}
 
-        {/* Colecciones: filtro + gestión */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <select
-            value={collectionFilter}
-            onChange={(e) => setCollectionFilter(e.target.value)}
-            className="text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
-          >
-            <option value="all">Todas las colecciones</option>
-            <option value="none">Sin colección</option>
-            {collections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+        {/* Galería de Colecciones: mismo estilo de tarjetas que "Resultados ›
+            Curaduría de Portafolio" — clic para entrar/filtrar por esa
+            colección; "Nueva colección" es una tarjeta más, al final. */}
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
+          <CollectionPickerCard
+            title="Todas"
+            subtitle={`${variants.length} variante(s)`}
+            photos={variants.map((v) => v.photoUrl)}
+            selected={collectionFilter === "all"}
+            onSelect={() => setCollectionFilter("all")}
+          />
+          {collections.map((c) => {
+            const vars = variants.filter((v) => v.collectionId === c.id);
+            return (
+              <CollectionPickerCard
+                key={c.id}
+                title={c.name}
+                subtitle={`${c.categoria || "Sin categoría"} · ${vars.length} producto(s)`}
+                photos={vars.map((v) => v.photoUrl)}
+                selected={collectionFilter === c.id}
+                onSelect={() => setCollectionFilter(c.id)}
+              />
+            );
+          })}
+          <CollectionPickerCard
+            title="Sin colección"
+            subtitle={`${variants.filter((v) => !v.collectionId).length} producto(s)`}
+            photos={variants.filter((v) => !v.collectionId).map((v) => v.photoUrl)}
+            selected={collectionFilter === "none"}
+            onSelect={() => setCollectionFilter("none")}
+          />
           <button
             onClick={openNewCollectionForm}
-            className="text-sm border border-brand-300 text-brand-700 rounded-lg px-3 py-1.5"
+            className="flex-shrink-0 w-48 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-400 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/40"
           >
-            + Nueva colección
+            <span className="text-xl leading-none">+</span>
+            <span className="text-xs font-medium">Nueva colección</span>
           </button>
-          {collections.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {collections.map((c) => (
-                <span
-                  key={c.id}
-                  className="inline-flex items-center gap-1 text-xs bg-slate-100 rounded-full pl-2.5 pr-1 py-1"
-                >
-                  {c.name}
-                  <button
-                    onClick={() => openEditCollectionForm(c)}
-                    title="Editar"
-                    className="w-5 h-5 rounded-full hover:bg-slate-200 flex items-center justify-center"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCollection(c)}
-                    title="Borrar"
-                    className="w-5 h-5 rounded-full hover:bg-red-100 text-red-500 flex items-center justify-center"
-                  >
-                    🗑️
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         {collectionFormOpen && (
@@ -618,6 +609,24 @@ export default function SkuGallery() {
                         PVP objetivo {formatCOP(collection.pvpObjetivo)}
                       </span>
                     )}
+                    {collection && (
+                      <>
+                        <button
+                          onClick={() => openEditCollectionForm(collection)}
+                          title="Editar colección"
+                          className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCollection(collection)}
+                          title="Borrar colección"
+                          className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center"
+                        >
+                          🗑️
+                        </button>
+                      </>
+                    )}
                     <button
                       onClick={() => toggleBucketSelected(modeloGroups)}
                       className={`text-xs font-medium px-2.5 py-1.5 rounded-full border ${
@@ -698,6 +707,31 @@ export default function SkuGallery() {
 
       <ZoomModal photo={zoomItem?.photo} name={zoomItem?.name} onClose={() => setZoomItem(null)} />
     </div>
+  );
+}
+
+// Mismo estilo que SurveyPickerCard en Results.jsx (pestaña "Curaduría de
+// Portafolio") — collage de fotos + nombre + subtítulo, tarjeta angosta en
+// fila horizontal, borde resaltado si está seleccionada. Clic = filtrar la
+// grilla de abajo por esa colección ("entrar" en ella).
+function CollectionPickerCard({ title, subtitle, photos, selected, onSelect }) {
+  return (
+    <button
+      onClick={onSelect}
+      className={`text-left bg-white rounded-xl overflow-hidden flex-shrink-0 w-48 border-2 transition-colors ${
+        selected ? "border-brand-600 shadow-md" : "border-transparent hover:border-slate-200"
+      }`}
+    >
+      <div className="grid grid-cols-6 gap-px bg-slate-100 h-12">
+        {photos.slice(0, 6).map((src, i) => (
+          <img key={i} src={src} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+        ))}
+      </div>
+      <div className="p-2">
+        <p className="text-sm font-semibold text-slate-800 truncate">{title}</p>
+        <p className="text-xs text-slate-500 truncate">{subtitle}</p>
+      </div>
+    </button>
   );
 }
 
