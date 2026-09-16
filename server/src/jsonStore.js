@@ -24,6 +24,7 @@ const DEFAULT_DB = {
   curationResponses: [],
   purchaseOrders: [],
   skuGalleryVariants: [],
+  skuGalleryCollections: [],
 };
 
 function ensureDb() {
@@ -356,4 +357,68 @@ export function deleteSkuGalleryVariant(id) {
   db.skuGalleryVariants = db.skuGalleryVariants.filter((v) => v.id !== id);
   writeDb(db);
   return db.skuGalleryVariants.length < before ? variant : null;
+}
+
+// --- Colecciones (agrupación de negocio sobre la Galería de SKUs) ---
+//
+// Una Colección es metadata de negocio (nombre, descripción, PVP objetivo,
+// categoría) — las variantes solo guardan `collectionId` (o null = "Sin
+// colección"), nunca el nombre/PVP duplicados: así renombrar o editar el
+// PVP de una colección no deja variantes con datos viejos regados por ahí.
+// La ruta que arma la respuesta al frontend (y la fila de Sheets al
+// sincronizar) resuelve el nombre/PVP buscando por collectionId en el
+// momento — ver routes/skuGallery.js.
+
+export function getSkuGalleryCollections() {
+  return readDb().skuGalleryCollections;
+}
+
+export function addSkuGalleryCollection(collection) {
+  const db = readDb();
+  db.skuGalleryCollections.push(collection);
+  writeDb(db);
+  return collection;
+}
+
+export function updateSkuGalleryCollection(id, patch) {
+  const db = readDb();
+  const collection = db.skuGalleryCollections.find((c) => c.id === id);
+  if (!collection) return null;
+  Object.assign(collection, patch);
+  writeDb(db);
+  return collection;
+}
+
+// Borra la colección y desasigna (NO borra) las variantes que apuntaban a
+// ella — quedan como "Sin colección", listas para reasignarse a otra.
+export function deleteSkuGalleryCollection(id) {
+  const db = readDb();
+  const before = db.skuGalleryCollections.length;
+  db.skuGalleryCollections = db.skuGalleryCollections.filter((c) => c.id !== id);
+  const deleted = db.skuGalleryCollections.length < before;
+  if (deleted) {
+    for (const v of db.skuGalleryVariants) {
+      if (v.collectionId === id) v.collectionId = null;
+    }
+  }
+  writeDb(db);
+  return deleted;
+}
+
+// Asigna TODAS las variantes de un modelo (ej. todas las "A1", "A2", "A3")
+// a una colección de una sola vez — collectionId=null desasigna. La
+// Colección se asigna por Modelo (referencia), no variante por variante,
+// porque todos los colores de un mismo modelo comparten la misma línea de
+// producto/PVP objetivo.
+export function assignModeloToCollection(modelo, collectionId) {
+  const db = readDb();
+  let count = 0;
+  for (const v of db.skuGalleryVariants) {
+    if (v.modelo === modelo) {
+      v.collectionId = collectionId || null;
+      count++;
+    }
+  }
+  writeDb(db);
+  return { count, variants: db.skuGalleryVariants };
 }

@@ -25,7 +25,18 @@ const CURATION_RANKING_TAB = "Curaduria_Ranking";
 const PURCHASE_ORDERS_TAB = "Gestion_Pedidos";
 const SKU_GALLERY_TAB = "SKUs_Aprobados";
 
-const SKU_GALLERY_HEADER = ["Modelo", "Codigo", "Nombre", "Cantidad", "Foto_URL", "Fecha_Guardado"];
+const SKU_GALLERY_HEADER = [
+  "Coleccion",
+  "Modelo",
+  "Codigo",
+  "Nombre",
+  "Cantidad",
+  "Foto_URL",
+  "PVP_Objetivo",
+  "Categoria",
+  "Descripcion_Coleccion",
+  "Fecha_Guardado",
+];
 
 // La última columna (Respuesta_ID) no es parte del pedido original de negocio,
 // es interna: nos permite ubicar y borrar la fila exacta de un evaluador

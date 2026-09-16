@@ -7,6 +7,11 @@ import {
   addSkuGalleryVariants,
   updateSkuGalleryVariant,
   deleteSkuGalleryVariant,
+  getSkuGalleryCollections,
+  addSkuGalleryCollection,
+  updateSkuGalleryCollection,
+  deleteSkuGalleryCollection,
+  assignModeloToCollection,
 } from "../jsonStore.js";
 import {
   uploadImageToCloudinary,
@@ -51,7 +56,76 @@ function parseSkuFilename(filename) {
 }
 
 router.get("/", requireAdmin, (_req, res) => {
-  res.json({ variants: getSkuGalleryVariants(), photoHostConfigured: isCloudinaryConfigured() });
+  res.json({
+    variants: getSkuGalleryVariants(),
+    collections: getSkuGalleryCollections(),
+    photoHostConfigured: isCloudinaryConfigured(),
+  });
+});
+
+// --- Colecciones (agrupación de negocio: nombre, descripción, PVP
+// objetivo, categoría) — ver comentario en jsonStore.js. Las variantes solo
+// guardan collectionId; el frontend arma el join con esta lista.
+const CATEGORIAS_COLECCION = ["Bolsos", "Calzado", "Ropa", "Accesorios"];
+
+router.post("/collections", requireAdmin, (req, res) => {
+  const { name, description, pvpObjetivo, categoria } = req.body || {};
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ error: "Falta el nombre de la colección." });
+  }
+  if (categoria && !CATEGORIAS_COLECCION.includes(categoria)) {
+    return res.status(400).json({ error: "Categoría inválida." });
+  }
+  const collection = {
+    id: crypto.randomUUID(),
+    name: String(name).trim(),
+    description: (description && String(description).trim()) || "",
+    pvpObjetivo: Number(pvpObjetivo) || 0,
+    categoria: categoria || "",
+    createdAt: new Date().toISOString(),
+  };
+  addSkuGalleryCollection(collection);
+  res.status(201).json(collection);
+});
+
+router.patch("/collections/:id", requireAdmin, (req, res) => {
+  const allowed = ["name", "description", "pvpObjetivo", "categoria"];
+  const patch = {};
+  for (const key of allowed) {
+    if (key in (req.body || {})) patch[key] = req.body[key];
+  }
+  if (typeof patch.name === "string") {
+    if (!patch.name.trim()) return res.status(400).json({ error: "El nombre de la colección no puede quedar vacío." });
+    patch.name = patch.name.trim();
+  }
+  if ("pvpObjetivo" in patch) patch.pvpObjetivo = Number(patch.pvpObjetivo) || 0;
+  if (patch.categoria && !CATEGORIAS_COLECCION.includes(patch.categoria)) {
+    return res.status(400).json({ error: "Categoría inválida." });
+  }
+  const updated = updateSkuGalleryCollection(req.params.id, patch);
+  if (!updated) return res.status(404).json({ error: "Colección no encontrada." });
+  res.json(updated);
+});
+
+// Borra la colección — las variantes que apuntaban a ella quedan "Sin
+// colección" (ver jsonStore.js), no se borran.
+router.delete("/collections/:id", requireAdmin, (req, res) => {
+  const ok = deleteSkuGalleryCollection(req.params.id);
+  if (!ok) return res.status(404).json({ error: "Colección no encontrada." });
+  res.json({ ok: true, variants: getSkuGalleryVariants() });
+});
+
+// Asigna (o desasigna, con collectionId: null) TODAS las variantes de un
+// modelo de una sola vez — ver assignModeloToCollection en jsonStore.js.
+router.patch("/models/:modelo/collection", requireAdmin, (req, res) => {
+  const { collectionId } = req.body || {};
+  if (collectionId) {
+    const exists = getSkuGalleryCollections().some((c) => c.id === collectionId);
+    if (!exists) return res.status(400).json({ error: "Colección no encontrada." });
+  }
+  const { count, variants } = assignModeloToCollection(req.params.modelo, collectionId || null);
+  if (count === 0) return res.status(404).json({ error: "No hay variantes de ese modelo." });
+  res.json({ ok: true, variants });
 });
 
 // Sube un lote de fotos locales: cada una se parsea por nombre, se sube a
@@ -152,6 +226,7 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
             photoPublicId: uploadResult.publicId,
             approved: false,
             cantidad: 0,
+            collectionId: null,
             addedAt: new Date().toISOString(),
           };
           toAdd.push(item);
@@ -196,10 +271,29 @@ router.delete("/variants/:id", requireAdmin, async (req, res) => {
 
 // Sincroniza SOLO las variantes aprobadas a la pestaña SKUs_Aprobados —
 // reemplaza toda la pestaña por el estado actual (hay una sola galería por
-// marca, ver comentario en sheets.js writeSkuGallerySheet).
+// marca, ver comentario en sheets.js writeSkuGallerySheet). Cada fila
+// incluye los metadatos de la Colección de esa variante (resueltos por
+// collectionId en este momento, no guardados en la variante — ver
+// jsonStore.js), o vacío si no tiene colección asignada.
 router.post("/sync", requireAdmin, async (req, res) => {
+  const collectionsById = new Map(getSkuGalleryCollections().map((c) => [c.id, c]));
   const approved = getSkuGalleryVariants().filter((v) => v.approved);
-  const rows = approved.map((v) => [v.modelo, v.code, v.label, v.cantidad, v.photoUrl, new Date().toISOString()]);
+  const now = new Date().toISOString();
+  const rows = approved.map((v) => {
+    const col = v.collectionId ? collectionsById.get(v.collectionId) : null;
+    return [
+      col?.name || "",
+      v.modelo,
+      v.code,
+      v.label,
+      v.cantidad,
+      v.photoUrl,
+      col?.pvpObjetivo || "",
+      col?.categoria || "",
+      col?.description || "",
+      now,
+    ];
+  });
   const result = await writeSkuGallerySheet(rows);
   res.json(result);
 });

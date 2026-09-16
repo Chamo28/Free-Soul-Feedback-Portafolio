@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import Navbar from "../components/Navbar.jsx";
 import ZoomModal from "../components/ZoomModal.jsx";
-import { getSkuGallery, uploadSkuGalleryPhotos, updateSkuGalleryVariant, deleteSkuGalleryVariant, syncSkuGallery } from "../api.js";
+import {
+  getSkuGallery,
+  uploadSkuGalleryPhotos,
+  updateSkuGalleryVariant,
+  deleteSkuGalleryVariant,
+  syncSkuGallery,
+  createSkuGalleryCollection,
+  updateSkuGalleryCollection,
+  deleteSkuGalleryCollection,
+  assignSkuGalleryModelCollection,
+} from "../api.js";
+import { formatCOP } from "../utils/purchaseOrderCalc.js";
+
+const CATEGORIAS_COLECCION = ["Bolsos", "Calzado", "Ropa", "Accesorios"];
 
 // Tamaño de lote para subir fotos: con cientos de fotos, mandarlas TODAS en
 // una sola request tardaba minutos sin dar ninguna señal de progreso (y
@@ -9,6 +22,10 @@ import { getSkuGallery, uploadSkuGalleryPhotos, updateSkuGalleryVariant, deleteS
 // tandas chicas, una tras otra, así cada request es rápida y se puede
 // mostrar una barra de progreso real (tanda a tanda).
 const UPLOAD_BATCH_SIZE = 15;
+
+function emptyCollectionForm() {
+  return { name: "", description: "", pvpObjetivo: "", categoria: "" };
+}
 
 function chunk(array, size) {
   const chunks = [];
@@ -30,8 +47,35 @@ function groupByModelo(variants) {
   return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+// Nivel superior: agrupa por Colección (y dentro de cada una, por modelo —
+// ver groupByModelo). Las colecciones aparecen en el orden en que se
+// crearon; un bucket final "Sin colección" agrupa lo que todavía no tiene
+// collectionId asignado (solo aparece si hay algo ahí).
+function groupByCollection(variants, collections) {
+  const byId = new Map();
+  for (const v of variants) {
+    const key = v.collectionId || "__none__";
+    if (!byId.has(key)) byId.set(key, []);
+    byId.get(key).push(v);
+  }
+  const buckets = [];
+  for (const collection of collections) {
+    const vars = byId.get(collection.id) || [];
+    if (vars.length > 0) buckets.push({ collection, modeloGroups: groupByModelo(vars) });
+  }
+  const sinColeccion = byId.get("__none__") || [];
+  if (sinColeccion.length > 0) buckets.push({ collection: null, modeloGroups: groupByModelo(sinColeccion) });
+  return buckets;
+}
+
 export default function SkuGallery() {
   const [variants, setVariants] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [collectionFilter, setCollectionFilter] = useState("all"); // "all" | "none" | <id>
+  const [collectionFormOpen, setCollectionFormOpen] = useState(false);
+  const [editingCollectionId, setEditingCollectionId] = useState(null); // null = creando una nueva
+  const [collectionForm, setCollectionForm] = useState(emptyCollectionForm());
+  const [savingCollection, setSavingCollection] = useState(false);
   const [photoHostConfigured, setPhotoHostConfigured] = useState(true); // optimista hasta el primer load
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState(false);
@@ -47,8 +91,9 @@ export default function SkuGallery() {
 
   const load = () => {
     getSkuGallery()
-      .then(({ variants, photoHostConfigured }) => {
+      .then(({ variants, collections, photoHostConfigured }) => {
         setVariants(variants);
+        setCollections(collections || []);
         setPhotoHostConfigured(photoHostConfigured);
         // Todos los modelos empiezan expandidos la primera vez que se cargan.
         setExpanded((prev) => new Set([...prev, ...variants.map((v) => v.modelo)]));
@@ -166,8 +211,76 @@ export default function SkuGallery() {
     }
   };
 
-  const groups = groupByModelo(variants);
-  const approvedCount = variants.filter((v) => v.approved).length;
+  // --- Colecciones ---
+
+  const openNewCollectionForm = () => {
+    setEditingCollectionId(null);
+    setCollectionForm(emptyCollectionForm());
+    setCollectionFormOpen(true);
+  };
+
+  const openEditCollectionForm = (collection) => {
+    setEditingCollectionId(collection.id);
+    setCollectionForm({
+      name: collection.name,
+      description: collection.description || "",
+      pvpObjetivo: collection.pvpObjetivo || "",
+      categoria: collection.categoria || "",
+    });
+    setCollectionFormOpen(true);
+  };
+
+  const handleSaveCollection = async (e) => {
+    e.preventDefault();
+    if (!collectionForm.name.trim()) return;
+    setSavingCollection(true);
+    try {
+      const payload = {
+        name: collectionForm.name.trim(),
+        description: collectionForm.description.trim(),
+        pvpObjetivo: Number(collectionForm.pvpObjetivo) || 0,
+        categoria: collectionForm.categoria,
+      };
+      if (editingCollectionId) {
+        const updated = await updateSkuGalleryCollection(editingCollectionId, payload);
+        setCollections((prev) => prev.map((c) => (c.id === editingCollectionId ? updated : c)));
+      } else {
+        const created = await createSkuGalleryCollection(payload);
+        setCollections((prev) => [...prev, created]);
+      }
+      setCollectionFormOpen(false);
+    } finally {
+      setSavingCollection(false);
+    }
+  };
+
+  const handleDeleteCollection = async (collection) => {
+    if (
+      !confirm(
+        `¿Borrar la colección "${collection.name}"? Los modelos asignados quedan como "Sin colección" (no se borra ninguna foto).`
+      )
+    )
+      return;
+    const result = await deleteSkuGalleryCollection(collection.id);
+    setCollections((prev) => prev.filter((c) => c.id !== collection.id));
+    setVariants(result.variants);
+    if (collectionFilter === collection.id) setCollectionFilter("all");
+  };
+
+  const handleAssignModeloCollection = async (modelo, collectionId) => {
+    const result = await assignSkuGalleryModelCollection(modelo, collectionId || null);
+    setVariants(result.variants);
+  };
+
+  const filteredVariants =
+    collectionFilter === "all"
+      ? variants
+      : collectionFilter === "none"
+        ? variants.filter((v) => !v.collectionId)
+        : variants.filter((v) => v.collectionId === collectionFilter);
+  const buckets = groupByCollection(filteredVariants, collections);
+  const modelosCount = buckets.reduce((sum, b) => sum + b.modeloGroups.length, 0);
+  const approvedCount = filteredVariants.filter((v) => v.approved).length;
 
   return (
     <div>
@@ -186,10 +299,131 @@ export default function SkuGallery() {
           </div>
         )}
 
+        {/* Colecciones: filtro + gestión */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <select
+            value={collectionFilter}
+            onChange={(e) => setCollectionFilter(e.target.value)}
+            className="text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+          >
+            <option value="all">Todas las colecciones</option>
+            <option value="none">Sin colección</option>
+            {collections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={openNewCollectionForm}
+            className="text-sm border border-brand-300 text-brand-700 rounded-lg px-3 py-1.5"
+          >
+            + Nueva colección
+          </button>
+          {collections.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {collections.map((c) => (
+                <span
+                  key={c.id}
+                  className="inline-flex items-center gap-1 text-xs bg-slate-100 rounded-full pl-2.5 pr-1 py-1"
+                >
+                  {c.name}
+                  <button
+                    onClick={() => openEditCollectionForm(c)}
+                    title="Editar"
+                    className="w-5 h-5 rounded-full hover:bg-slate-200 flex items-center justify-center"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCollection(c)}
+                    title="Borrar"
+                    className="w-5 h-5 rounded-full hover:bg-red-100 text-red-500 flex items-center justify-center"
+                  >
+                    🗑️
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {collectionFormOpen && (
+          <form
+            onSubmit={handleSaveCollection}
+            className="bg-white border border-slate-200 rounded-xl p-4 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3"
+          >
+            <p className="sm:col-span-2 text-sm font-medium text-slate-700">
+              {editingCollectionId ? "Editar colección" : "Nueva colección"}
+            </p>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Nombre</label>
+              <input
+                value={collectionForm.name}
+                onChange={(e) => setCollectionForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Ej. Bolsos Precio Medio"
+                required
+                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Categoría / Género</label>
+              <select
+                value={collectionForm.categoria}
+                onChange={(e) => setCollectionForm((f) => ({ ...f, categoria: e.target.value }))}
+                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm"
+              >
+                <option value="">—</option>
+                {CATEGORIAS_COLECCION.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-slate-500 mb-1">Descripción / concepto</label>
+              <input
+                value={collectionForm.description}
+                onChange={(e) => setCollectionForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Ej. Línea urbana funcional para estrato 2-4"
+                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">PVP objetivo sugerido (COP)</label>
+              <input
+                type="number"
+                step="any"
+                value={collectionForm.pvpObjetivo}
+                onChange={(e) => setCollectionForm((f) => ({ ...f, pvpObjetivo: e.target.value }))}
+                placeholder="89000"
+                className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div className="sm:col-span-2 flex gap-2">
+              <button
+                type="submit"
+                disabled={savingCollection || !collectionForm.name.trim()}
+                className="bg-brand-600 text-white rounded-lg px-4 py-1.5 text-sm font-medium disabled:opacity-60"
+              >
+                {savingCollection ? "Guardando..." : editingCollectionId ? "Guardar cambios" : "Crear colección"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCollectionFormOpen(false)}
+                className="border border-slate-300 rounded-lg px-4 py-1.5 text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+
         {/* Resumen */}
         <div className="grid grid-cols-3 gap-3 mb-4 max-w-md">
-          <SummaryCard label="Modelos" value={groups.length} />
-          <SummaryCard label="Variantes" value={variants.length} />
+          <SummaryCard label="Modelos" value={modelosCount} />
+          <SummaryCard label="Variantes" value={filteredVariants.length} />
           <SummaryCard label="Aprobadas" value={approvedCount} highlight />
         </div>
 
@@ -280,41 +514,97 @@ export default function SkuGallery() {
           {syncMsg && <span className="text-xs text-slate-500">{syncMsg}</span>}
         </div>
 
-        {!loading && groups.length === 0 && (
+        {!loading && buckets.length === 0 && (
           <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500">
-            Todavía no hay ninguna variante — suelta fotos arriba para empezar.
+            {variants.length === 0
+              ? "Todavía no hay ninguna variante — suelta fotos arriba para empezar."
+              : "Ningún modelo en esta colección todavía."}
           </div>
         )}
 
-        <div className="space-y-3">
-          {groups.map(([modelo, items]) => (
-            <div key={modelo} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <button
-                onClick={() => toggleExpanded(modelo)}
-                className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100"
-              >
-                <span className="font-semibold text-slate-800">
-                  Modelo {modelo} <span className="text-slate-400 font-normal">· {items.length} variante(s)</span>
-                </span>
-                <span className="text-slate-400">{expanded.has(modelo) ? "▲" : "▼"}</span>
-              </button>
-              {expanded.has(modelo) && (
-                <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {items.map((v) => (
-                    <VariantCard
-                      key={v.id}
-                      variant={v}
-                      onZoom={() => setZoomItem({ photo: v.photoUrl, name: v.label })}
-                      onToggleApproved={() => handleToggleApproved(v)}
-                      onQtyCommit={(val) => handleQtyCommit(v, val)}
-                      onLabelCommit={(val) => handleLabelCommit(v, val)}
-                      onDelete={() => handleDelete(v)}
-                    />
+        <div className="space-y-5">
+          {buckets.map(({ collection, modeloGroups }) => {
+            const bucketVariants = modeloGroups.flatMap(([, items]) => items);
+            const bucketApproved = bucketVariants.filter((v) => v.approved).length;
+            return (
+              <div key={collection?.id || "__none__"}>
+                {/* Encabezado de Colección */}
+                <div
+                  className={`rounded-xl p-3.5 mb-2.5 flex flex-wrap items-center justify-between gap-2 ${
+                    collection ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  <div>
+                    <p className="font-display font-bold">{collection ? collection.name : "Sin colección"}</p>
+                    {collection?.description && (
+                      <p className={`text-xs ${collection ? "text-white/80" : "text-slate-500"}`}>
+                        {collection.description}
+                      </p>
+                    )}
+                    <p className={`text-xs mt-0.5 ${collection ? "text-white/70" : "text-slate-400"}`}>
+                      {modeloGroups.length} modelo(s) · {bucketVariants.length} variante(s) · {bucketApproved} aprobada(s)
+                      {collection?.categoria ? ` · ${collection.categoria}` : ""}
+                    </p>
+                  </div>
+                  {collection?.pvpObjetivo > 0 && (
+                    <span
+                      className={`text-xs font-bold px-3 py-1.5 rounded-full ${
+                        collection ? "bg-white/15 text-white" : "bg-white text-slate-700"
+                      }`}
+                    >
+                      PVP objetivo {formatCOP(collection.pvpObjetivo)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Grilla anidada: Modelos -> Variantes */}
+                <div className="space-y-3">
+                  {modeloGroups.map(([modelo, items]) => (
+                    <div key={modelo} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 gap-2 flex-wrap">
+                        <button
+                          onClick={() => toggleExpanded(modelo)}
+                          className="flex items-center gap-2 font-semibold text-slate-800 flex-1 min-w-0 text-left"
+                        >
+                          Modelo {modelo} <span className="text-slate-400 font-normal">· {items.length} variante(s)</span>
+                          <span className="text-slate-400 ml-auto">{expanded.has(modelo) ? "▲" : "▼"}</span>
+                        </button>
+                        <select
+                          value={collection?.id || ""}
+                          onChange={(e) => handleAssignModeloCollection(modelo, e.target.value || null)}
+                          onClick={(e) => e.stopPropagation()}
+                          title="Asignar este modelo a una colección"
+                          className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
+                        >
+                          <option value="">Sin colección</option>
+                          {collections.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {expanded.has(modelo) && (
+                        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {items.map((v) => (
+                            <VariantCard
+                              key={v.id}
+                              variant={v}
+                              onZoom={() => setZoomItem({ photo: v.photoUrl, name: v.label })}
+                              onToggleApproved={() => handleToggleApproved(v)}
+                              onQtyCommit={(val) => handleQtyCommit(v, val)}
+                              onLabelCommit={(val) => handleLabelCommit(v, val)}
+                              onDelete={() => handleDelete(v)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </div>
 

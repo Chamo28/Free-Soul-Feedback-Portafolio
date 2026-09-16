@@ -325,7 +325,7 @@ export async function downloadPurchaseOrderCsv(id, filename) {
 
 export async function getSkuGallery() {
   const { data } = await api.get("/sku-gallery");
-  return data; // { variants, photoHostConfigured }
+  return data; // { variants, collections, photoHostConfigured }
 }
 
 // formData: un campo "photos" por cada archivo soltado en el dropzone.
@@ -349,6 +349,29 @@ export async function deleteSkuGalleryVariant(id) {
 export async function syncSkuGallery() {
   const { data } = await api.post("/sku-gallery/sync");
   return data;
+}
+
+// --- Colecciones (agrupación de negocio de la Galería de SKUs) ---
+
+export async function createSkuGalleryCollection(payload) {
+  const { data } = await api.post("/sku-gallery/collections", payload);
+  return data;
+}
+
+export async function updateSkuGalleryCollection(id, patch) {
+  const { data } = await api.patch(`/sku-gallery/collections/${id}`, patch);
+  return data;
+}
+
+export async function deleteSkuGalleryCollection(id) {
+  const { data } = await api.delete(`/sku-gallery/collections/${id}`);
+  return data; // { ok, variants } — variants viene actualizado (desasignados de esta colección)
+}
+
+// collectionId: null desasigna. Asigna TODAS las variantes de ese modelo.
+export async function assignSkuGalleryModelCollection(modelo, collectionId) {
+  const { data } = await api.patch(`/sku-gallery/models/${encodeURIComponent(modelo)}/collection`, { collectionId });
+  return data; // { ok, variants }
 }
 
 export default api;
