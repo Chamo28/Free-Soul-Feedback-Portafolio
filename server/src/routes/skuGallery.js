@@ -44,16 +44,32 @@ const router = Router();
 // matchea (foto sin ese patrón) se reporta como advertencia, no se agrega.
 function parseSkuFilename(filename) {
   const base = filename.replace(/\.[^.]+$/, "");
-  // Letra: 1-4 caracteres (cubre modelos de una letra o abreviaturas cortas).
-  // Número: 1-3 dígitos EXACTOS (el (?!\d) evita que corte a la mitad) — así
-  // nombres típicos de cámara/celular (IMG_2024.jpg, DCIM0001.jpg,
-  // WhatsApp Image 2024...) no matchean por accidente como si fueran un
-  // código de variante real.
-  const match = base.match(/^([A-Za-z]{1,4})[-_ ]?(\d{1,3})(?!\d)/);
-  if (!match) return null;
-  const modelo = match[1].toUpperCase();
-  const numero = match[2];
-  return { modelo, code: `${modelo}${numero}` };
+
+  // Patrón 1: LETRA(S)+NÚMERO, pegado o con un separador — "A1", "Detalle_23",
+  // "Principal01". Letras sin tope (antes tope de 4, pero nombres reales de
+  // fotógrafo/proveedor son descriptivos: "Detalle", "Principal"...) — lo
+  // que de verdad filtra los nombres de cámara/celular es el NÚMERO: 1-3
+  // dígitos EXACTOS (el (?!\d) evita que corte a la mitad), así que
+  // "IMG_2024.jpg"/"DCIM0001.jpg" (4 dígitos) siguen sin matchear por
+  // accidente como si fueran un código de variante real.
+  let match = base.match(/^([A-Za-z]+)[-_ ]?(\d{1,3})(?!\d)/);
+  if (match) {
+    const modelo = match[1].toUpperCase();
+    return { modelo, code: `${modelo}${match[2]}` };
+  }
+
+  // Patrón 2: "nombre (N)" — lo que deja Windows al guardar duplicados sin
+  // renombrar ("a.jpg", "a (1).jpg", "a (2).jpg"...). El nombre base (sin
+  // el "(N)") se limpia de todo lo que no sea letra/número para armar el
+  // modelo; si queda vacío (nombre puramente numérico o de símbolos), cae a
+  // "REF" en vez de fallar.
+  match = base.match(/^(.+?)\s*\((\d{1,3})\)$/);
+  if (match) {
+    const modelo = match[1].replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "REF";
+    return { modelo, code: `${modelo}${match[2]}` };
+  }
+
+  return null;
 }
 
 router.get("/", requireAdmin, (_req, res) => {

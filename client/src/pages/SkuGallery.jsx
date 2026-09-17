@@ -534,10 +534,10 @@ export default function SkuGallery() {
             )}
           </p>
           <p className="text-xs text-slate-400">
-            Nombra cada foto <code>LETRA+NÚMERO</code> (ej. <code>A1.jpg</code>, <code>A2.jpg</code>, <code>B1.jpg</code>) — la
-            letra agrupa el modelo, el número es la variante de color. Se suben directo a Cloudinary, nunca a este
-            servidor. Si vuelves a soltar una foto con el mismo código (ej. otra <code>A1.jpg</code>), reemplaza la
-            foto anterior — no se duplica.
+            Nombra cada foto <code>LETRA+NÚMERO</code> (ej. <code>A1.jpg</code>, <code>Detalle_23.jpg</code>,{" "}
+            <code>a (2).jpg</code>) — el texto agrupa el modelo, el número es la variante. Se suben directo a
+            Cloudinary, nunca a este servidor. Si vuelves a soltar una foto con el mismo código (ej. otra{" "}
+            <code>A1.jpg</code>), reemplaza la foto anterior — no se duplica.
           </p>
           <input
             ref={fileInputRef}
