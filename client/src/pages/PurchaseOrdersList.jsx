@@ -23,7 +23,13 @@ export default function PurchaseOrdersList() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim()) {
+      // El navegador ya avisa si el campo está vacío del todo (atributo
+      // "required"), pero un nombre de solo espacios pasa esa validación
+      // igual — sin este mensaje, el botón parecía no hacer nada.
+      setCreateError("Escribe un nombre para el pedido.");
+      return;
+    }
     setCreating(true);
     setCreateError("");
     try {
@@ -59,6 +65,8 @@ export default function PurchaseOrdersList() {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Nombre del pedido (ej. Bolsos Octubre 2026)"
+            required
+            title="Escribe un nombre para el pedido"
             className="flex-1 border border-slate-300 rounded-lg px-3 py-2"
           />
           <button
