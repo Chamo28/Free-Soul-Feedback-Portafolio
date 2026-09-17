@@ -11,7 +11,7 @@ import {
   createSkuGalleryCollection,
   updateSkuGalleryCollection,
   deleteSkuGalleryCollection,
-  assignSkuGalleryModelCollection,
+  setSkuGalleryModelCollections,
 } from "../api.js";
 import { formatCOP } from "../utils/purchaseOrderCalc.js";
 
@@ -49,22 +49,19 @@ function groupByModelo(variants) {
 }
 
 // Nivel superior: agrupa por Colección (y dentro de cada una, por modelo —
-// ver groupByModelo). Las colecciones aparecen en el orden en que se
-// crearon; un bucket final "Sin colección" agrupa lo que todavía no tiene
-// collectionId asignado (solo aparece si hay algo ahí).
+// ver groupByModelo). Una misma variante puede pertenecer a VARIAS
+// colecciones a la vez (collectionIds es una lista), así que puede
+// aparecer en más de un bucket a propósito — no es un bug, es la
+// "duplicidad" que se pidió permitir. Las colecciones aparecen en el orden
+// en que se crearon; un bucket final "Sin colección" agrupa lo que
+// todavía no tiene ninguna colección asignada (solo aparece si hay algo ahí).
 function groupByCollection(variants, collections) {
-  const byId = new Map();
-  for (const v of variants) {
-    const key = v.collectionId || "__none__";
-    if (!byId.has(key)) byId.set(key, []);
-    byId.get(key).push(v);
-  }
   const buckets = [];
   for (const collection of collections) {
-    const vars = byId.get(collection.id) || [];
+    const vars = variants.filter((v) => v.collectionIds.includes(collection.id));
     if (vars.length > 0) buckets.push({ collection, modeloGroups: groupByModelo(vars) });
   }
-  const sinColeccion = byId.get("__none__") || [];
+  const sinColeccion = variants.filter((v) => v.collectionIds.length === 0);
   if (sinColeccion.length > 0) buckets.push({ collection: null, modeloGroups: groupByModelo(sinColeccion) });
   return buckets;
 }
@@ -324,8 +321,22 @@ export default function SkuGallery() {
     if (collectionFilter === collection.id) setCollectionFilter("all");
   };
 
-  const handleAssignModeloCollection = async (modelo, collectionId) => {
-    const result = await assignSkuGalleryModelCollection(modelo, collectionId || null);
+  // El "set" de colecciones de un modelo se muestra como la UNIÓN de las
+  // colecciones de sus variantes (si alguna quedó distinta por una subida
+  // puntual, esto la vuelve a alinear con el resto al tocar cualquiera).
+  const modeloCollectionIds = (items) => [...new Set(items.flatMap((v) => v.collectionIds))];
+
+  const handleAddModeloToCollection = async (modelo, items, collectionId) => {
+    if (!collectionId) return;
+    const current = modeloCollectionIds(items);
+    if (current.includes(collectionId)) return;
+    const result = await setSkuGalleryModelCollections(modelo, [...current, collectionId]);
+    setVariants(result.variants);
+  };
+
+  const handleRemoveModeloFromCollection = async (modelo, items, collectionId) => {
+    const current = modeloCollectionIds(items);
+    const result = await setSkuGalleryModelCollections(modelo, current.filter((id) => id !== collectionId));
     setVariants(result.variants);
   };
 
@@ -333,8 +344,8 @@ export default function SkuGallery() {
     collectionFilter === "all"
       ? variants
       : collectionFilter === "none"
-        ? variants.filter((v) => !v.collectionId)
-        : variants.filter((v) => v.collectionId === collectionFilter);
+        ? variants.filter((v) => v.collectionIds.length === 0)
+        : variants.filter((v) => v.collectionIds.includes(collectionFilter));
   const buckets = groupByCollection(filteredVariants, collections);
   const modelosCount = buckets.reduce((sum, b) => sum + b.modeloGroups.length, 0);
   // Colección a la que se asignan las fotos NUEVAS que se suelten ahora —
@@ -375,7 +386,7 @@ export default function SkuGallery() {
             onSelect={() => setCollectionFilter("all")}
           />
           {collections.map((c) => {
-            const vars = variants.filter((v) => v.collectionId === c.id);
+            const vars = variants.filter((v) => v.collectionIds.includes(c.id));
             return (
               <CollectionPickerCard
                 key={c.id}
@@ -391,8 +402,8 @@ export default function SkuGallery() {
           })}
           <CollectionPickerCard
             title="Sin colección"
-            subtitle={`${variants.filter((v) => !v.collectionId).length} producto(s)`}
-            photos={variants.filter((v) => !v.collectionId).map((v) => v.photoUrl)}
+            subtitle={`${variants.filter((v) => v.collectionIds.length === 0).length} producto(s)`}
+            photos={variants.filter((v) => v.collectionIds.length === 0).map((v) => v.photoUrl)}
             selected={collectionFilter === "none"}
             onSelect={() => setCollectionFilter("none")}
           />
@@ -712,7 +723,10 @@ export default function SkuGallery() {
 
                 {/* Grilla anidada: Modelos -> Variantes */}
                 <div className="space-y-3">
-                  {modeloGroups.map(([modelo, items]) => (
+                  {modeloGroups.map(([modelo, items]) => {
+                    const modeloCols = modeloCollectionIds(items);
+                    const addableCollections = collections.filter((c) => !modeloCols.includes(c.id));
+                    return (
                     <div
                       key={modelo}
                       className={`bg-white border rounded-xl overflow-hidden ${
@@ -734,20 +748,48 @@ export default function SkuGallery() {
                           Modelo {modelo} <span className="text-slate-400 font-normal">· {items.length} variante(s)</span>
                           <span className="text-slate-400 ml-auto">{expanded.has(modelo) ? "▲" : "▼"}</span>
                         </button>
-                        <select
-                          value={collection?.id || ""}
-                          onChange={(e) => handleAssignModeloCollection(modelo, e.target.value || null)}
-                          onClick={(e) => e.stopPropagation()}
-                          title="Asignar este modelo a una colección"
-                          className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
-                        >
-                          <option value="">Sin colección</option>
-                          {collections.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                        {/* Una misma foto puede estar en varias colecciones a la
+                            vez: se muestran como chips removibles + un select
+                            para sumar otra (no reemplaza las que ya tiene). */}
+                        <div className="flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          {modeloCols.length === 0 && (
+                            <span className="text-xs text-slate-400">Sin colección</span>
+                          )}
+                          {modeloCols.map((id) => {
+                            const col = collections.find((c) => c.id === id);
+                            if (!col) return null;
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 text-xs bg-brand-50 text-brand-700 rounded-full pl-2 pr-1 py-0.5"
+                              >
+                                {col.name}
+                                <button
+                                  onClick={() => handleRemoveModeloFromCollection(modelo, items, id)}
+                                  title={`Quitar de "${col.name}"`}
+                                  className="w-4 h-4 rounded-full hover:bg-brand-100 flex items-center justify-center"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                          {addableCollections.length > 0 && (
+                            <select
+                              value=""
+                              onChange={(e) => handleAddModeloToCollection(modelo, items, e.target.value)}
+                              title="Sumar este modelo a otra colección"
+                              className="text-xs border border-slate-300 rounded-lg px-1.5 py-0.5 bg-white text-slate-500"
+                            >
+                              <option value="">+ Agregar a...</option>
+                              {addableCollections.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
                       </div>
                       {expanded.has(modelo) && (
                         <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -765,7 +807,8 @@ export default function SkuGallery() {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

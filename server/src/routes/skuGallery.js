@@ -12,7 +12,7 @@ import {
   addSkuGalleryCollection,
   updateSkuGalleryCollection,
   deleteSkuGalleryCollection,
-  assignModeloToCollection,
+  setModeloCollections,
 } from "../jsonStore.js";
 import {
   uploadImageToCloudinary,
@@ -108,23 +108,28 @@ router.patch("/collections/:id", requireAdmin, (req, res) => {
   res.json(updated);
 });
 
-// Borra la colección — las variantes que apuntaban a ella quedan "Sin
-// colección" (ver jsonStore.js), no se borran.
+// Borra la colección — se QUITA (no borra) de todas las variantes que la
+// tenían asignada; si estaban en otras colecciones también, se quedan ahí
+// (ver jsonStore.js).
 router.delete("/collections/:id", requireAdmin, (req, res) => {
   const ok = deleteSkuGalleryCollection(req.params.id);
   if (!ok) return res.status(404).json({ error: "Colección no encontrada." });
   res.json({ ok: true, variants: getSkuGalleryVariants() });
 });
 
-// Asigna (o desasigna, con collectionId: null) TODAS las variantes de un
-// modelo de una sola vez — ver assignModeloToCollection en jsonStore.js.
-router.patch("/models/:modelo/collection", requireAdmin, (req, res) => {
-  const { collectionId } = req.body || {};
-  if (collectionId) {
-    const exists = getSkuGalleryCollections().some((c) => c.id === collectionId);
-    if (!exists) return res.status(400).json({ error: "Colección no encontrada." });
+// Reemplaza el set COMPLETO de colecciones de TODAS las variantes de un
+// modelo de una sola vez — ver setModeloCollections en jsonStore.js. body:
+// { collectionIds: [...] } (puede ser varias, o [] para "Sin colección").
+router.patch("/models/:modelo/collections", requireAdmin, (req, res) => {
+  const { collectionIds } = req.body || {};
+  if (!Array.isArray(collectionIds)) {
+    return res.status(400).json({ error: "collectionIds debe ser una lista (puede ir vacía)." });
   }
-  const { count, variants } = assignModeloToCollection(req.params.modelo, collectionId || null);
+  const known = new Set(getSkuGalleryCollections().map((c) => c.id));
+  for (const id of collectionIds) {
+    if (!known.has(id)) return res.status(400).json({ error: "Colección no encontrada." });
+  }
+  const { count, variants } = setModeloCollections(req.params.modelo, collectionIds);
   if (count === 0) return res.status(404).json({ error: "No hay variantes de ese modelo." });
   res.json({ ok: true, variants });
 });
@@ -153,10 +158,12 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
 
       // Campo opcional "collectionId" (multer lo deja en req.body junto a
       // los demás campos que no son archivo) — si el admin tenía una
-      // colección filtrada/seleccionada al soltar las fotos, las variantes
-      // NUEVAS nacen ya asignadas a esa colección en vez de "Sin colección".
-      // Solo aplica a fotos nuevas: una foto que reemplaza una variante
-      // existente conserva la colección que ya tenía (ver más abajo).
+      // colección filtrada/seleccionada al soltar las fotos: una variante
+      // NUEVA nace ya con esa colección; una variante que YA EXISTÍA (se
+      // está reemplazando la foto) la AGREGA a su lista sin quitarle las
+      // que ya tenía — una misma foto puede estar en varias colecciones a
+      // la vez, así que volver a soltar el mismo lote con otra colección
+      // seleccionada es justamente la forma de sumarla a esa otra también.
       let targetCollectionId = null;
       if (req.body?.collectionId) {
         const exists = getSkuGalleryCollections().some((c) => c.id === req.body.collectionId);
@@ -224,10 +231,14 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
         const existing = existingByCode.get(codeKey);
         if (existing) {
           const oldPublicId = existing.photoPublicId;
-          updateSkuGalleryVariant(existing.id, {
-            photoUrl: uploadResult.photoUrl,
-            photoPublicId: uploadResult.publicId,
-          });
+          const patch = { photoUrl: uploadResult.photoUrl, photoPublicId: uploadResult.publicId };
+          // Si se soltó con una colección seleccionada, se SUMA a la lista
+          // que ya tenía (no la reemplaza) — así la misma foto puede quedar
+          // en varias colecciones con subidas sucesivas.
+          if (targetCollectionId && !existing.collectionIds.includes(targetCollectionId)) {
+            patch.collectionIds = [...existing.collectionIds, targetCollectionId];
+          }
+          updateSkuGalleryVariant(existing.id, patch);
           deleteImageFromCloudinary(oldPublicId); // best-effort, no bloquea la respuesta
           overwritten.push(parsed.code);
         } else {
@@ -240,7 +251,7 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
             photoPublicId: uploadResult.publicId,
             approved: false,
             cantidad: 0,
-            collectionId: targetCollectionId,
+            collectionIds: targetCollectionId ? [targetCollectionId] : [],
             addedAt: new Date().toISOString(),
           };
           toAdd.push(item);
@@ -301,29 +312,32 @@ router.delete("/models", requireAdmin, async (req, res) => {
 
 // Sincroniza SOLO las variantes aprobadas a la pestaña SKUs_Aprobados —
 // reemplaza toda la pestaña por el estado actual (hay una sola galería por
-// marca, ver comentario en sheets.js writeSkuGallerySheet). Cada fila
-// incluye los metadatos de la Colección de esa variante (resueltos por
-// collectionId en este momento, no guardados en la variante — ver
-// jsonStore.js), o vacío si no tiene colección asignada.
+// marca, ver comentario en sheets.js writeSkuGallerySheet). Como una misma
+// variante puede estar en VARIAS colecciones a la vez, genera una fila por
+// cada colección a la que pertenece (con el PVP/categoría de esa colección
+// puntual) — y una sola fila con esos campos vacíos si no tiene ninguna.
 router.post("/sync", requireAdmin, async (req, res) => {
   const collectionsById = new Map(getSkuGalleryCollections().map((c) => [c.id, c]));
   const approved = getSkuGalleryVariants().filter((v) => v.approved);
   const now = new Date().toISOString();
-  const rows = approved.map((v) => {
-    const col = v.collectionId ? collectionsById.get(v.collectionId) : null;
-    return [
-      col?.name || "",
-      v.modelo,
-      v.code,
-      v.label,
-      v.cantidad,
-      v.photoUrl,
-      col?.pvpObjetivo || "",
-      col?.categoria || "",
-      col?.description || "",
-      now,
-    ];
-  });
+  const rows = [];
+  for (const v of approved) {
+    const cols = v.collectionIds.length > 0 ? v.collectionIds.map((id) => collectionsById.get(id)).filter(Boolean) : [null];
+    for (const col of cols) {
+      rows.push([
+        col?.name || "",
+        v.modelo,
+        v.code,
+        v.label,
+        v.cantidad,
+        v.photoUrl,
+        col?.pvpObjetivo || "",
+        col?.categoria || "",
+        col?.description || "",
+        now,
+      ]);
+    }
+  }
   const result = await writeSkuGallerySheet(rows);
   res.json(result);
 });

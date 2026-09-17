@@ -41,9 +41,25 @@ function readDb() {
   try {
     // merge con DEFAULT_DB para que bases de datos viejas (creadas antes de
     // agregar Curaduría de Portafolio) obtengan las colecciones nuevas como [].
-    return { ...DEFAULT_DB, ...JSON.parse(raw) };
+    const db = { ...DEFAULT_DB, ...JSON.parse(raw) };
+    migrateSkuGalleryVariants(db);
+    return db;
   } catch {
     return { ...DEFAULT_DB };
+  }
+}
+
+// Migración en caliente (in-place, sin script aparte): las variantes viejas
+// guardaban `collectionId` (una sola colección o null). Ahora una misma
+// foto puede pertenecer a VARIAS colecciones a la vez, así que el campo
+// pasa a `collectionIds` (array) — se corre en cada lectura, es barata e
+// idempotente (una vez migrada una variante, no vuelve a tocarla).
+function migrateSkuGalleryVariants(db) {
+  for (const v of db.skuGalleryVariants) {
+    if (!Array.isArray(v.collectionIds)) {
+      v.collectionIds = v.collectionId ? [v.collectionId] : [];
+      delete v.collectionId;
+    }
   }
 }
 
@@ -375,12 +391,14 @@ export function deleteSkuGalleryVariantsByModelo(modelos) {
 // --- Colecciones (agrupación de negocio sobre la Galería de SKUs) ---
 //
 // Una Colección es metadata de negocio (nombre, descripción, PVP objetivo,
-// categoría) — las variantes solo guardan `collectionId` (o null = "Sin
+// categoría) — las variantes solo guardan `collectionIds` (array — una
+// misma foto puede pertenecer a VARIAS colecciones a la vez, ej. estar
+// tanto en "Bolsos Precio Medio" como en "Novedades"; [] = "Sin
 // colección"), nunca el nombre/PVP duplicados: así renombrar o editar el
 // PVP de una colección no deja variantes con datos viejos regados por ahí.
 // La ruta que arma la respuesta al frontend (y la fila de Sheets al
-// sincronizar) resuelve el nombre/PVP buscando por collectionId en el
-// momento — ver routes/skuGallery.js.
+// sincronizar) resuelve el nombre/PVP buscando por id en el momento — ver
+// routes/skuGallery.js.
 
 export function getSkuGalleryCollections() {
   return readDb().skuGalleryCollections;
@@ -402,8 +420,10 @@ export function updateSkuGalleryCollection(id, patch) {
   return collection;
 }
 
-// Borra la colección y desasigna (NO borra) las variantes que apuntaban a
-// ella — quedan como "Sin colección", listas para reasignarse a otra.
+// Borra la colección y la QUITA (NO borra la variante) de todas las
+// variantes que la tenían en su lista — si una variante estaba en varias
+// colecciones, se queda en las demás; si esta era la única, pasa a "Sin
+// colección" sola.
 export function deleteSkuGalleryCollection(id) {
   const db = readDb();
   const before = db.skuGalleryCollections.length;
@@ -411,24 +431,26 @@ export function deleteSkuGalleryCollection(id) {
   const deleted = db.skuGalleryCollections.length < before;
   if (deleted) {
     for (const v of db.skuGalleryVariants) {
-      if (v.collectionId === id) v.collectionId = null;
+      if (v.collectionIds.includes(id)) v.collectionIds = v.collectionIds.filter((c) => c !== id);
     }
   }
   writeDb(db);
   return deleted;
 }
 
-// Asigna TODAS las variantes de un modelo (ej. todas las "A1", "A2", "A3")
-// a una colección de una sola vez — collectionId=null desasigna. La
-// Colección se asigna por Modelo (referencia), no variante por variante,
+// Reemplaza el set COMPLETO de colecciones de TODAS las variantes de un
+// modelo (ej. todas las "A1", "A2", "A3") de una sola vez — collectionIds
+// es la lista final deseada (puede ser [] para dejarlo "Sin colección", o
+// varias a la vez, ya que una misma foto puede pertenecer a más de una
+// colección). La Colección se asigna por Modelo, no variante por variante,
 // porque todos los colores de un mismo modelo comparten la misma línea de
 // producto/PVP objetivo.
-export function assignModeloToCollection(modelo, collectionId) {
+export function setModeloCollections(modelo, collectionIds) {
   const db = readDb();
   let count = 0;
   for (const v of db.skuGalleryVariants) {
     if (v.modelo === modelo) {
-      v.collectionId = collectionId || null;
+      v.collectionIds = [...collectionIds];
       count++;
     }
   }

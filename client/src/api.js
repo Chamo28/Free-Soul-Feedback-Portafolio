@@ -375,9 +375,11 @@ export async function deleteSkuGalleryCollection(id) {
   return data; // { ok, variants } — variants viene actualizado (desasignados de esta colección)
 }
 
-// collectionId: null desasigna. Asigna TODAS las variantes de ese modelo.
-export async function assignSkuGalleryModelCollection(modelo, collectionId) {
-  const { data } = await api.patch(`/sku-gallery/models/${encodeURIComponent(modelo)}/collection`, { collectionId });
+// Reemplaza el set COMPLETO de colecciones de TODAS las variantes de ese
+// modelo — collectionIds puede tener varias (una misma foto puede
+// pertenecer a más de una colección) o [] para "Sin colección".
+export async function setSkuGalleryModelCollections(modelo, collectionIds) {
+  const { data } = await api.patch(`/sku-gallery/models/${encodeURIComponent(modelo)}/collections`, { collectionIds });
   return data; // { ok, variants }
 }
 
