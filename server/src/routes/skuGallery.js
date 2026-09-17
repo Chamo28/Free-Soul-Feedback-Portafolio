@@ -151,6 +151,19 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
         return res.status(400).json({ error: "No llegó ninguna foto." });
       }
 
+      // Campo opcional "collectionId" (multer lo deja en req.body junto a
+      // los demás campos que no son archivo) — si el admin tenía una
+      // colección filtrada/seleccionada al soltar las fotos, las variantes
+      // NUEVAS nacen ya asignadas a esa colección en vez de "Sin colección".
+      // Solo aplica a fotos nuevas: una foto que reemplaza una variante
+      // existente conserva la colección que ya tenía (ver más abajo).
+      let targetCollectionId = null;
+      if (req.body?.collectionId) {
+        const exists = getSkuGalleryCollections().some((c) => c.id === req.body.collectionId);
+        if (!exists) return res.status(400).json({ error: "Colección no encontrada." });
+        targetCollectionId = req.body.collectionId;
+      }
+
       const existingByCode = new Map(getSkuGalleryVariants().map((v) => [v.code.toLowerCase(), v]));
       const unrecognized = [];
       const uploadFailures = [];
@@ -227,7 +240,7 @@ router.post("/upload", requireAdmin, upload.array("photos", MAX_FILES_PER_REQUES
             photoPublicId: uploadResult.publicId,
             approved: false,
             cantidad: 0,
-            collectionId: null,
+            collectionId: targetCollectionId,
             addedAt: new Date().toISOString(),
           };
           toAdd.push(item);

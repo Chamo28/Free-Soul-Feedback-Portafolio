@@ -128,6 +128,12 @@ export default function SkuGallery() {
       try {
         const formData = new FormData();
         batch.forEach((f) => formData.append("photos", f));
+        // Si hay una colección específica filtrada/seleccionada, las fotos
+        // NUEVAS nacen ya asignadas a ella (no a "Sin colección") — "all" y
+        // "none" no cuentan como colección real.
+        if (collectionFilter !== "all" && collectionFilter !== "none") {
+          formData.append("collectionId", collectionFilter);
+        }
         const result = await uploadSkuGalleryPhotos(formData);
         setVariants(result.variants);
         setExpanded((prev) => new Set([...prev, ...result.variants.map((v) => v.modelo)]));
@@ -331,6 +337,13 @@ export default function SkuGallery() {
         : variants.filter((v) => v.collectionId === collectionFilter);
   const buckets = groupByCollection(filteredVariants, collections);
   const modelosCount = buckets.reduce((sum, b) => sum + b.modeloGroups.length, 0);
+  // Colección a la que se asignan las fotos NUEVAS que se suelten ahora —
+  // la misma que está filtrada/seleccionada arriba (null si es "Todas"/"Sin
+  // colección", ahí las fotos nuevas quedan sin asignar como antes).
+  const uploadTargetCollection =
+    collectionFilter !== "all" && collectionFilter !== "none"
+      ? collections.find((c) => c.id === collectionFilter) || null
+      : null;
   const approvedCount = filteredVariants.filter((v) => v.approved).length;
 
   return (
@@ -371,6 +384,8 @@ export default function SkuGallery() {
                 photos={vars.map((v) => v.photoUrl)}
                 selected={collectionFilter === c.id}
                 onSelect={() => setCollectionFilter(c.id)}
+                onEdit={() => openEditCollectionForm(c)}
+                onDelete={() => handleDeleteCollection(c)}
               />
             );
           })}
@@ -495,6 +510,18 @@ export default function SkuGallery() {
               elige archivos
             </button>
           </p>
+          <p className="text-xs font-medium mb-1">
+            {uploadTargetCollection ? (
+              <span className="text-brand-700">
+                📥 Las fotos nuevas se asignan a "{uploadTargetCollection.name}"
+              </span>
+            ) : (
+              <span className="text-slate-400">
+                📥 Las fotos nuevas quedan "Sin colección" — filtra/selecciona una colección arriba antes de subir
+                para asignarlas directo.
+              </span>
+            )}
+          </p>
           <p className="text-xs text-slate-400">
             Nombra cada foto <code>LETRA+NÚMERO</code> (ej. <code>A1.jpg</code>, <code>A2.jpg</code>, <code>B1.jpg</code>) — la
             letra agrupa el modelo, el número es la variante de color. Se suben directo a Cloudinary, nunca a este
@@ -566,6 +593,47 @@ export default function SkuGallery() {
             </button>
           )}
         </div>
+
+        {/* Si la colección filtrada todavía no tiene ningún producto, su
+            banner (nombre/descripción/PVP/editar/borrar) no sale más abajo
+            porque ahí solo se arman buckets con contenido — se muestra acá
+            para que "seleccionar la colección" siempre la deje ver y editar,
+            tenga o no productos todavía. */}
+        {!loading && buckets.length === 0 && uploadTargetCollection && (
+          <div className="rounded-xl p-3.5 mb-2.5 bg-brand-700 text-white flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-display font-bold">{uploadTargetCollection.name}</p>
+              {uploadTargetCollection.description && (
+                <p className="text-xs text-white/80">{uploadTargetCollection.description}</p>
+              )}
+              <p className="text-xs mt-0.5 text-white/70">
+                0 modelo(s) · 0 variante(s)
+                {uploadTargetCollection.categoria ? ` · ${uploadTargetCollection.categoria}` : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {uploadTargetCollection.pvpObjetivo > 0 && (
+                <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-white/15 text-white">
+                  PVP objetivo {formatCOP(uploadTargetCollection.pvpObjetivo)}
+                </span>
+              )}
+              <button
+                onClick={() => openEditCollectionForm(uploadTargetCollection)}
+                title="Editar colección"
+                className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center"
+              >
+                ✏️
+              </button>
+              <button
+                onClick={() => handleDeleteCollection(uploadTargetCollection)}
+                title="Borrar colección"
+                className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+        )}
 
         {!loading && buckets.length === 0 && (
           <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500">
@@ -714,24 +782,57 @@ export default function SkuGallery() {
 // Portafolio") — collage de fotos + nombre + subtítulo, tarjeta angosta en
 // fila horizontal, borde resaltado si está seleccionada. Clic = filtrar la
 // grilla de abajo por esa colección ("entrar" en ella).
-function CollectionPickerCard({ title, subtitle, photos, selected, onSelect }) {
+function CollectionPickerCard({ title, subtitle, photos, selected, onSelect, onEdit, onDelete }) {
   return (
-    <button
-      onClick={onSelect}
-      className={`text-left bg-white rounded-xl overflow-hidden flex-shrink-0 w-48 border-2 transition-colors ${
+    <div
+      className={`relative text-left bg-white rounded-xl overflow-hidden flex-shrink-0 w-48 border-2 transition-colors ${
         selected ? "border-brand-600 shadow-md" : "border-transparent hover:border-slate-200"
       }`}
     >
-      <div className="grid grid-cols-6 gap-px bg-slate-100 h-12">
-        {photos.slice(0, 6).map((src, i) => (
-          <img key={i} src={src} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-        ))}
-      </div>
-      <div className="p-2">
-        <p className="text-sm font-semibold text-slate-800 truncate">{title}</p>
-        <p className="text-xs text-slate-500 truncate">{subtitle}</p>
-      </div>
-    </button>
+      <button onClick={onSelect} className="block w-full text-left">
+        <div className="grid grid-cols-6 gap-px bg-slate-100 h-12">
+          {photos.slice(0, 6).map((src, i) => (
+            <img key={i} src={src} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+          ))}
+        </div>
+        <div className="p-2">
+          <p className="text-sm font-semibold text-slate-800 truncate">{title}</p>
+          <p className="text-xs text-slate-500 truncate">{subtitle}</p>
+        </div>
+      </button>
+      {/* Editar/borrar disponibles aunque la colección todavía no tenga
+          ningún producto (antes solo se podía desde el banner de abajo, que
+          no se muestra si está vacía — por eso "no aparecía" nada al
+          seleccionar una colección recién creada). */}
+      {(onEdit || onDelete) && (
+        <div className="absolute top-1 right-1 flex gap-0.5">
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              title="Editar colección"
+              className="w-6 h-6 rounded-full bg-white/90 shadow hover:bg-white flex items-center justify-center text-xs"
+            >
+              ✏️
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              title="Borrar colección"
+              className="w-6 h-6 rounded-full bg-white/90 shadow hover:bg-white flex items-center justify-center text-xs"
+            >
+              🗑️
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
